@@ -110,7 +110,7 @@ func _physics_process(delta: float) -> void:
 	_update_possession()
 	_decide -= delta
 	if _decide <= 0.0:
-		_decide = randf_range(0.22, 0.42)
+		_decide = randf_range(0.16, 0.30)
 		if carrier != null:
 			_carrier_decide()
 	_dribble -= delta
@@ -166,11 +166,11 @@ func _carrier_decide() -> void:
 			ball.kick(to, clampf(to.length() * 2.2, 360.0, 820.0), 0.0, 0.0)
 			carrier = null
 			return
-	# DRIBLE: empurra a bola na direção do gol
+	# DRIBLE: empurra a bola na direção do gol (toques mais frequentes = mais rápido)
 	if _dribble <= 0.0:
-		_dribble = 0.28
+		_dribble = 0.18
 		var d := (goal_c - carrier.global_position).normalized()
-		ball.kick(d, 230.0 + carrier.stats.get("ctrl", 1.0) * 40.0, 0.0, 0.0)
+		ball.kick(d, 300.0 + carrier.stats.get("ctrl", 1.0) * 50.0, 0.0, 0.0)
 
 func _best_pass(from: Player) -> Player:
 	var gx := goal_x(from.team)
@@ -204,24 +204,43 @@ func _move_players() -> void:
 	for p in all:
 		p.target = _target_for(p, chaser)
 
-func _target_for(p: Player, chaser: Player) -> Vector2:
+func _target_for(p: Player, presser: Player) -> Vector2:
+	var bx := ball.global_position.x
+	var by := ball.global_position.y
+	var atk := 1.0 if p.team == "home" else -1.0   # sentido de ataque do time de p
+	var minx := FIELD.position.x + 36.0
+	var maxx := FIELD.end.x - 36.0
+
+	# GOLEIRO — fecha o ângulo: fica na reta bola↔centro do gol, perto da linha
 	if p.role == "gk":
-		var gx := own_goal_x(p.team)
-		var ty := clampf(ball.global_position.y, GOAL_TOP + 10.0, GOAL_BOT - 10.0)
-		return Vector2(gx + (26.0 if p.team == "home" else -26.0), ty)
+		var gc := Vector2(own_goal_x(p.team), MID.y)
+		var d := ball.global_position - gc
+		var pos := gc + d.normalized() * clampf(d.length() * 0.18, 22.0, 82.0)
+		pos.y = clampf(pos.y, GOAL_TOP + 8.0, GOAL_BOT - 8.0)
+		if p.team == "home":
+			pos.x = clampf(pos.x, FIELD.position.x + 12, FIELD.position.x + 120)
+		else:
+			pos.x = clampf(pos.x, FIELD.end.x - 120, FIELD.end.x - 12)
+		return pos
+
+	# CARREGADOR — leva a bola rumo ao gol (um passo à frente dela)
 	if p == carrier:
-		# carregador acompanha a bola
-		return ball.global_position
+		return ball.global_position + Vector2(18.0 * atk, 0.0)
+
+	# raia do jogador, puxando um pouco pra altura da bola (compacta o time)
+	var lane := clampf(lerpf(p.home_pos.y, by, 0.28), FIELD.position.y + 30, FIELD.end.y - 30)
+
 	if p.team == poss:
-		# em posse: avança em apoio, deslocando a formação rumo ao ataque
-		var shift := (ball.global_position.x - MID.x) * 0.6
-		return Vector2(clampf(p.home_pos.x + shift, FIELD.position.x + 30, FIELD.end.x - 30), p.home_pos.y)
+		# ATAQUE sem a bola: fwd corre à frente, mid apoia, def cobre atrás
+		var push := 210.0 if p.role == "fwd" else (70.0 if p.role == "mid" else -50.0)
+		return Vector2(clampf(bx + push * atk, minx, maxx), lane)
 	else:
-		# sem posse: o caçador vai na bola; resto recua em linha
-		if p == chaser:
+		# DEFESA sem a bola: presser vai na bola; resto segura linha goal-side
+		if p == presser:
 			return ball.global_position
-		var shift := (ball.global_position.x - MID.x) * 0.45
-		return Vector2(clampf(p.home_pos.x + shift, FIELD.position.x + 30, FIELD.end.x - 30), p.home_pos.y)
+		var own_gx := own_goal_x(p.team)
+		var line_x := lerpf(bx, own_gx, 0.32)
+		return Vector2(clampf(line_x, minx, maxx), lane)
 
 func _closest_to_ball(team: String) -> Player:
 	var best: Player = null; var bd := 1e9

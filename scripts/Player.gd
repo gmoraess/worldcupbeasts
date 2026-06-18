@@ -6,8 +6,9 @@ class_name Player
 var team := "home"            # "home" ataca pra direita · "away" pra esquerda
 var role := "mid"             # gk / def / mid / fwd
 var home_pos := Vector2.ZERO  # vaga na formação (campo)
-var max_speed := 230.0
-var accel := 1100.0
+var max_speed := 330.0    # arcade: mais rápido
+var accel := 3000.0       # acelera rápido (snappy)
+var decel := 4200.0       # FREIA rápido — mata o "deslize no gelo"
 var stats := {"fin": 1.0, "ctrl": 1.0, "des": 1.0, "def": 1.0, "sta": 1.0}
 
 var target := Vector2.ZERO    # pra onde mover (o Match seta por frame)
@@ -52,10 +53,12 @@ func _physics_process(delta: float) -> void:
 	var to := target - global_position
 	var dist := to.length()
 	var desired := Vector2.ZERO
-	if dist > 2.0:
+	if dist > 4.0:
 		var sp := max_speed
-		if dist < 36.0:
-			sp = max_speed * (dist / 36.0)   # arrive: desacelera perto do alvo
+		if dist < 24.0:
+			sp = max_speed * (dist / 24.0)   # arrive: desacelera perto do alvo
 		desired = to.normalized() * sp
-	velocity = velocity.move_toward(desired, accel * delta)
+	# acelera rápido quando ganha velocidade; FREIA mais rápido ainda (anti-gelo)
+	var rate := accel if desired.length() >= velocity.length() - 1.0 else decel
+	velocity = velocity.move_toward(desired, rate * delta)
 	move_and_slide()
