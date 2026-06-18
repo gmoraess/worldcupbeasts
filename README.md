@@ -50,8 +50,8 @@ HUD                   -> broadcast minimalista (placar + relógio)
 ## 🗺️ Roadmap (etapas)
 
 - **Etapa 0 — Vertical slice da bola** ✅ — sandbox que prova que a bola é incrível (portão vai/não-vai). **Aprovado.**
-- **Etapa 1 — A partida** 🔄 — futebol N×N que emerge da física + IA. Feito: física, movimento (meio-termo entre linha sincronizada e independente), passes que conectam, defesa zonal, goleiro, placar realista.
-- **Etapa 2 — A corrida (roguelike)** ⏳ — enxertar `GameState` (mapa de 3 atos, feras como **perfis de stats que enviesam a física**, relíquias mexendo em **parâmetros físicos**, loja, eventos).
+- **Etapa 1 — A partida** ✅ — futebol N×N que emerge da física + IA: movimento meio-termo (linha junta mas imperfeita), passes que conectam, defesa zonal, goleiro, placar realista.
+- **Etapa 2 — A corrida (roguelike)** 🔄 — **jogável**: `GameState` com feras como **perfis de stats que enviesam a física**, relíquias mexendo em **parâmetros físicos**, mapa de 3 atos, loja, eventos; roteador (seleção→mapa→partida→relíquia/evento/loja→resultado). Falta: passe de **balanceamento/paridade** entre feras e valor da loja.
 - **Etapa 3 — HUD broadcast + juice + arte** ⏳ — transmissão minimalista, feras como sprites, áudio.
 - **Etapa 4 — Conteúdo e meta** ⏳ — mais feras, desbloqueáveis, balanceamento.
 

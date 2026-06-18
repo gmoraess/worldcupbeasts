@@ -29,5 +29,10 @@ Futebol N×N que **emerge da física + IA** (autobattler: você assiste, sem com
 4. **Defesa zonal + correções do goleiro** — bloco que desliza por zonas (corrige o amontoado), goleiro sai pouco/agarra/distribui, fim do deadlock no goleiro.
 5. **Meio-termo de movimento + passes que conectam** ✅ — a linha anda junta **mas imperfeita** (força de seguir + deriva + velocidade individuais); o destinatário do passe corre pra receber (passes **completam**, fim do loop de ping-pong), com margem de erro pra bote/interceptação. **Aprovado pelo usuário.**
 
-### Próximo — Etapa 2 (roguelike)
-Enxertar a corrida: feras como perfis de stats que enviesam a física; relíquias mexendo em parâmetros físicos; mapa de 3 atos; loja; eventos.
+### Etapa 2 — A corrida (roguelike) 🔄 jogável
+- **2A:** `GameState` (autoload) com as 4 feras como **perfis de stats** que enviesam a física, inimigos (normal/elite/chefe, escalam por ato), relíquias que mexem em **parâmetros físicos**, mapa de 3 atos e navegação. A partida lê o `GameState` (perfil da fera/inimigo aplicado aos jogadores).
+- **2B:** telas de meta + roteador (`Main.gd`): seleção de fera → mapa → partida → relíquia/evento/loja → resultado (repescagem, ato, vitória/derrota). Dá pra **jogar uma corrida inteira** (3 atos → Copa).
+- **Falta:** passe de balanceamento/paridade entre feras e valor da loja (validação headless em volume).
+
+### Próximo — Etapa 3 (HUD broadcast + juice + arte)
+Transmissão minimalista, feras como sprites, áudio.
