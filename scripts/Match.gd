@@ -6,6 +6,8 @@ extends Node2D
 const Ball = preload("res://scripts/Ball.gd")
 const Player = preload("res://scripts/Player.gd")
 
+signal match_over(home_won: bool)   # avisa o roteador quando a partida termina
+
 const FIELD := Rect2(90, 70, 1100, 580)
 const GOAL_TOP := 290.0
 const GOAL_BOT := 430.0
@@ -25,6 +27,7 @@ var poss := ""                   # "home"/"away"/"" (bola solta/no ar)
 var score := {"home": 0, "away": 0}
 var clock := MATCH_SECONDS
 var over := false
+var sudden_death := false
 
 var _decide := 0.0
 var _goal_cd := 0.0
@@ -117,9 +120,13 @@ func _physics_process(delta: float) -> void:
 	_pass_t = maxf(0.0, _pass_t - delta)
 	if _pass_t <= 0.0: _pass_to = null
 	if _goal_cd <= 0.0:
-		clock = maxf(0.0, clock - delta)
-		if clock <= 0.0:
-			_end_match()
+		if not sudden_death:
+			clock = maxf(0.0, clock - delta)
+		if clock <= 0.0 and not over:
+			if score["home"] != score["away"]:
+				_finish_match()
+			else:
+				sudden_death = true   # empate no tempo → morte súbita (gol de ouro)
 
 	_update_possession(delta)
 	_gk_save()                    # goleiro defende (por lógica — a bola atravessa fisicamente)
@@ -374,6 +381,10 @@ func _score_goal(team: String) -> void:
 	_shake = 16.0
 	ball.ball_time_scale = 1.0
 	_popup_goal()
+	# fim imediato: goleada (5 de diferença) ou gol de ouro na morte súbita
+	if absi(score["home"] - score["away"]) >= 5 or sudden_death:
+		_finish_match()
+		return
 	await get_tree().create_timer(2.0).timeout
 	if not over:
 		_kickoff("home" if team == "away" else "away")
@@ -421,10 +432,14 @@ func _spawn_trail(spd: float) -> void:
 	tw.tween_property(dot, "scale", Vector2(0.2, 0.2), 0.33)
 	tw.chain().tween_callback(dot.queue_free)
 
-func _end_match() -> void:
+func _finish_match() -> void:
+	if over: return
 	over = true
-	_goal_lbl.text = "FIM  %d × %d" % [score["home"], score["away"]]
+	var home_won: bool = score["home"] >= score["away"]   # ST resolvida não empata
+	_goal_lbl.text = "FIM  %d x %d" % [score["home"], score["away"]]
 	_goal_lbl.modulate = Color(1, 1, 1, 1)
+	await get_tree().create_timer(1.6).timeout
+	match_over.emit(home_won)
 
 # ==========================================================================
 #  CAMPO / HUD
