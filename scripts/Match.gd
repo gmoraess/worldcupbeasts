@@ -76,6 +76,8 @@ func _build_team(team: String) -> void:
 	var arr: Array = home if team == "home" else away
 	var defend_x := own_goal_x(team)
 	var dir := 1.0 if team == "home" else -1.0   # sentido do ataque
+	# perfil de stats (fera do jogador / inimigo) — enviesa a física
+	var profile: Dictionary = GameState.home_stats() if team == "home" else GameState.away_stats()
 	var slots := [
 		["gk",  defend_x + 40.0 * dir, MID.y],
 		["def", defend_x + 230.0 * dir, MID.y - 110.0],
@@ -89,6 +91,8 @@ func _build_team(team: String) -> void:
 		p.home_pos = Vector2(s[1], s[2])
 		p.global_position = p.home_pos
 		add_child(p)
+		p.stats = profile.duplicate()
+		p.max_speed *= profile.get("spd", 1.0)
 		arr.append(p)
 
 func _kickoff(team: String) -> void:
