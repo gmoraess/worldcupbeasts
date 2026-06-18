@@ -34,6 +34,8 @@ var _in_flight := false       # bola viajando (passe/chute) — ninguém control
 var _steal_cd := 0.0          # tempo mínimo entre trocas de posse (anti-pinball)
 var _save_rolled := false     # 1 tentativa de defesa por chute
 var _shot_cd := 0.0           # cooldown global de chute (controla o placar)
+var _pass_to: Player = null   # destinatário do passe (corre pra receber)
+var _pass_t := 0.0            # janela do passe
 
 var _score_lbl: Label
 var _clock_lbl: Label
@@ -108,6 +110,8 @@ func _physics_process(delta: float) -> void:
 	if over: return
 	_goal_cd = maxf(0.0, _goal_cd - delta)
 	_shot_cd = maxf(0.0, _shot_cd - delta)
+	_pass_t = maxf(0.0, _pass_t - delta)
+	if _pass_t <= 0.0: _pass_to = null
 	if _goal_cd <= 0.0:
 		clock = maxf(0.0, clock - delta)
 		if clock <= 0.0:
@@ -165,6 +169,7 @@ func _set_carrier(p: Player) -> void:
 	carrier = p
 	poss = p.team
 	_in_flight = false
+	_pass_to = null
 	_steal_cd = maxf(_steal_cd, 0.3)
 
 ## Defesa do goleiro: 1 tentativa por chute. Se a bola passa coladinha no GK,
@@ -222,12 +227,12 @@ func _carrier_decide() -> void:
 	# GOLEIRO com a bola → afasta rápido (tiro de meta/lançamento), não dribla na área
 	if carrier.role == "gk":
 		var gmate := _best_pass(carrier)
-		var clr: Vector2
 		if gmate != null:
-			clr = gmate.global_position - carrier.global_position
+			var gto := gmate.global_position - carrier.global_position
+			ball.kick(gto, clampf(gto.length() * 2.0, 380.0, 820.0), 0.0, 0.0)
+			_pass_to = gmate; _pass_t = 1.6        # distribui curto (mantém posse)
 		else:
-			clr = Vector2(goal_x(carrier.team) - carrier.global_position.x, randf_range(-140, 140))
-		ball.kick(clr, clampf(clr.length() * 1.8, 520.0, 960.0), 0.0, 130.0)
+			ball.kick(Vector2(goal_x(carrier.team) - carrier.global_position.x, randf_range(-120, 120)), 700.0, 0.0, 110.0)
 		_in_flight = true; carrier = null; _save_rolled = false
 		return
 	var team := carrier.team
@@ -252,9 +257,11 @@ func _carrier_decide() -> void:
 	elif mate != null and randf() < 0.45:
 		pass_it = true
 	if pass_it and mate != null:
-		var lead := mate.velocity * 0.16              # passa pro ESPAÇO à frente do companheiro
-		var to := (mate.global_position + lead) - carrier.global_position
-		ball.kick(to, clampf(to.length() * 2.4, 380.0, 900.0), 0.0, 0.0)
+		var lead := mate.velocity * 0.10
+		var aim := mate.global_position + lead + Vector2(randf_range(-22, 22), randf_range(-22, 22))  # margem de erro
+		var to := aim - carrier.global_position
+		ball.kick(to, clampf(to.length() * 2.0, 380.0, 820.0), 0.0, 0.0)
+		_pass_to = mate; _pass_t = 1.4         # o companheiro corre pra receber → conecta
 		_in_flight = true; carrier = null; _save_rolled = false
 		return
 	# senão, segue driblando (o _carry_ball + o alvo rumo ao gol cuidam do resto)
@@ -316,17 +323,24 @@ func _target_for(p: Player, presser: Player) -> Vector2:
 			dir = (dir + (p.global_position - opp.global_position).normalized() * 0.55).normalized()
 		return p.global_position + dir * 110.0
 
+	# RECEPTOR do passe corre pra bola (faz o passe CONECTAR — menos ping-pong)
+	if p == _pass_to:
+		return ball.global_position
+
 	# PRESSER — o ÚNICO do time sem posse que vai à bola (o resto segura a forma)
 	if p.team != poss and p == presser:
 		return ball.global_position
 
-	# ZONAL — slot da formação deslizando como BLOCO: desloca pela x da bola e
-	# pela FASE (ataca → sobe / defende → recua), mantendo a raia (compacta um pouco).
-	var hx := (ball.global_position.x - MID.x) * 0.5
+	# ZONAL — bloco que desliza (x da bola + fase) mas IMPERFEITO: cada jogador
+	# segue com força própria (p.follow) + deriva temporal (wander) na sua fase
+	# → meio-termo entre linha sincronizada e movimento independente.
+	var t := float(Time.get_ticks_msec()) * 0.001
+	var wander := Vector2(sin(t * 0.7 + p.phase), cos(t * 1.05 + p.phase * 1.6)) * 20.0
+	var hx := (ball.global_position.x - MID.x) * 0.5 * p.follow
 	var phase := (56.0 if p.team == poss else -34.0) * atk
 	var tx := clampf(p.home_pos.x + hx + phase, minx, maxx)
-	var ty := clampf(lerpf(p.home_pos.y, ball.global_position.y, 0.18), FIELD.position.y + 30, FIELD.end.y - 30)
-	return Vector2(tx, ty) + p.jitter
+	var ty := clampf(lerpf(p.home_pos.y, ball.global_position.y, 0.18 * p.follow), FIELD.position.y + 30, FIELD.end.y - 30)
+	return Vector2(tx, ty) + p.jitter * 0.5 + wander
 
 func _closest_to_ball(team: String) -> Player:
 	var best: Player = null; var bd := 1e9

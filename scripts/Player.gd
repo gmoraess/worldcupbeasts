@@ -15,6 +15,7 @@ var target := Vector2.ZERO    # pra onde mover (o Match seta por frame)
 var radius := 13.0
 var jitter := Vector2.ZERO    # deslocamento próprio (independência de movimento)
 var phase := 0.0              # fase pra corridas/oscilações individuais
+var follow := 1.0             # o quanto segue o bloco (imperfeito por jogador)
 
 var _sprite: Polygon2D
 
@@ -30,8 +31,11 @@ func _ready() -> void:
 	# disco colorido por time + anel por papel
 	var base: Color = Color("3f86ad") if team == "home" else Color("e07a3a")
 	if role == "gk": base = base.lightened(0.35)
-	jitter = Vector2(randf_range(-26, 26), randf_range(-26, 26))
+	jitter = Vector2(randf_range(-22, 22), randf_range(-22, 22))
 	phase = randf() * TAU
+	follow = randf_range(0.78, 1.16)        # cada um segue o bloco diferente
+	max_speed *= randf_range(0.93, 1.08)    # velocidades individuais
+	accel *= randf_range(0.9, 1.12)
 	_sprite = _disc(radius, base)
 	add_child(_sprite)
 	var ring := _ring(radius + 3.0, Color(0, 0, 0, 0.5))
