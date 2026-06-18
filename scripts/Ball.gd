@@ -21,6 +21,10 @@ var _shadow: Node2D
 signal bounced(strength: float, where: Vector2)
 
 func _ready() -> void:
+	# camadas: bola = layer 4, colide só com paredes/traves (layer 1).
+	# Não colide com jogadores (a interação bola-jogador é por lógica no Match).
+	collision_layer = 4
+	collision_mask = 1
 	# colisão (círculo)
 	var cs := CollisionShape2D.new()
 	var c := CircleShape2D.new(); c.radius = radius

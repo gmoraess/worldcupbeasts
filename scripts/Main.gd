@@ -273,6 +273,7 @@ func _build_goal() -> void:
 		_net_line([Vector2(x, GOAL_TOP), Vector2(x, GOAL_BOT)])
 	# sensor de gol
 	var area := Area2D.new()
+	area.collision_mask = 4   # detecta a bola (layer 4)
 	area.position = Vector2(GOAL_X + 26, (GOAL_TOP + GOAL_BOT) / 2.0)
 	var cs := CollisionShape2D.new()
 	var sh := RectangleShape2D.new(); sh.size = Vector2(40, GOAL_BOT - GOAL_TOP)
