@@ -5,6 +5,7 @@ extends Node2D
 ## (fora da partida). O cérebro do lance mora aqui; o Player só faz steering.
 const Ball = preload("res://scripts/Ball.gd")
 const Player = preload("res://scripts/Player.gd")
+const ScoreEngineLib = preload("res://scripts/match/ScoreEngine.gd")
 
 signal match_over(home_won: bool)   # avisa o roteador quando a partida termina
 
@@ -66,6 +67,14 @@ var _fury_bar := {"home": null, "away": null}
 var _cutin_cd := 0.0            # cap de 1 cut-in a cada ~12s (SPEC §6.2)
 var _cutin_layer: CanvasLayer = null
 
+# — PONTUAÇÃO BALATRO (Doc 3 §3) —
+var _score = null              # ScoreEngineLib instance
+var _target := 100             # pontuação-alvo da blind (vitória = bater o alvo)
+var _home_has_poss := false    # se a posse de pontuação atual é do jogador
+var _target_lbl: Label
+var _chips_lbl: Label
+var _prog: ProgressBar
+
 func goal_x(team: String) -> float:
 	# o gol que o time ATACA
 	return FIELD.end.x if team == "home" else FIELD.position.x
@@ -90,6 +99,10 @@ func _ready() -> void:
 	_build_team("away")
 	all.append_array(home)
 	all.append_array(away)
+
+	_score = ScoreEngineLib.new()
+	_score.jokers = GameState.player_jokers()
+	_target = GameState.target()
 
 	_build_hud()
 	_kickoff("home")
@@ -148,13 +161,10 @@ func _physics_process(delta: float) -> void:
 	_cutin_cd = maxf(0.0, _cutin_cd - delta)
 	if _pass_t <= 0.0: _pass_to = null
 	if _goal_cd <= 0.0:
-		if not sudden_death:
-			clock = maxf(0.0, clock - delta)
+		clock = maxf(0.0, clock - delta)
 		if clock <= 0.0 and not over:
-			if score["home"] != score["away"]:
-				_finish_match()
-			else:
-				sudden_death = true   # empate no tempo → morte súbita (gol de ouro)
+			# fim do tempo → venceu se bateu a pontuação-alvo (Doc 3)
+			_finish_by_target(_score != null and _score.total >= _target)
 
 	_update_possession(delta)
 	_anti_deadlock(delta)         # rede de segurança: bola presa em disputa > 3s
@@ -195,6 +205,7 @@ func _update_possession(delta: float) -> void:
 			if randf() < 0.40:
 				_set_carrier(dgk)
 				_add_fury(dgk.team, "STEAL")
+				if dgk.team == "home" and _score: _score.action("desarme")
 				_steal_cd = 0.6
 				return
 		# ROUBO deliberado: um adversário coladinho rola uma chance (não instantâneo)
@@ -206,6 +217,7 @@ func _update_possession(delta: float) -> void:
 				_shake = maxf(_shake, 4.0)
 				_set_carrier(opp)
 				_add_fury(opp.team, "STEAL")
+				if opp.team == "home" and _score: _score.action("desarme")
 				_steal_cd = 0.7
 
 func _set_carrier(p: Player) -> void:
@@ -214,6 +226,32 @@ func _set_carrier(p: Player) -> void:
 	_in_flight = false
 	_pass_to = null
 	_steal_cd = maxf(_steal_cd, 0.3)
+	_score_owner(p.team)
+
+# ==========================================================================
+#  PONTUAÇÃO BALATRO (Doc 3 §3) — posse do jogador = "mão"
+# ==========================================================================
+## Troca de dono da posse: começa a "mão" do jogador ou fecha (banca) ao perdê-la.
+func _score_owner(side: String) -> void:
+	if _score == null: return
+	if side == "home" and not _home_has_poss:
+		_home_has_poss = true
+		_score.start_possession()
+	elif side != "home" and _home_has_poss:
+		_home_has_poss = false
+		_bank()
+
+## Fecha a jogada do jogador: pontua chips×mult, anima e checa o alvo.
+func _bank() -> void:
+	var g: int = _score.finalizar_jogada()
+	if g > 0:
+		_score_pop(g)
+	_check_target()
+
+func _check_target() -> void:
+	if over: return
+	if _score.total >= _target:
+		_finish_by_target(true)
 
 ## Anti cabo-de-guerra: se a bola fica num raio pequeno por mais de 3s (disputa
 ## parada, ninguém progride), alguém "ganha o bate-pé" e ela escapa do amontoado.
@@ -369,6 +407,8 @@ func _carrier_decide() -> void:
 		var noise := (1.6 - clampf(fin, 0.5, 1.5)) * 60.0
 		var aim := goal_c + Vector2(0, randf_range(-noise, noise))
 		ball.kick(aim - carrier.global_position, 780.0 + fin * 220.0, randf_range(-1.2, 1.2) * (1.4 - fin), 0.0)
+		if carrier.team == "home" and _score:
+			_score.action("finalizacao")
 		_in_flight = true; carrier = null; _save_rolled = false
 		_enter_climax()
 		return
@@ -384,6 +424,8 @@ func _carrier_decide() -> void:
 		var aim := mate.global_position + lead + Vector2(randf_range(-22, 22), randf_range(-22, 22))  # margem de erro
 		var to := aim - carrier.global_position
 		ball.kick(to, clampf(to.length() * 2.0, 380.0, 820.0), 0.0, 0.0)
+		if carrier.team == "home" and _score:
+			_score.action("lancamento" if to.length() > 280.0 else "passe")
 		_pass_to = mate; _pass_t = 1.4         # o companheiro corre pra receber → conecta
 		_in_flight = true; carrier = null; _save_rolled = false
 		return
@@ -490,7 +532,13 @@ func _check_goal() -> void:
 
 func _score_goal(team: String) -> void:
 	score[team] += 1
-	print("GOL %s! %d-%d (t=%.0f)" % [team, score["home"], score["away"], clock])
+	# PONTUAÇÃO (Doc 3): gol do jogador pontua (super gol vale mais) e fecha a "mão"
+	var was_super := _super_shot_live == team
+	if team == "home" and _score != null:
+		_score.action("super_gol" if was_super else "gol")
+		_home_has_poss = false
+		_bank()
+	print("GOL %s! pts=%d/%d (t=%.0f)" % [team, _score.total if _score else 0, _target, clock])
 	_add_fury(team, "GOAL")
 	_add_fury("away" if team == "home" else "home", "CONCEDE")
 	_super_shot_live = ""
@@ -498,9 +546,7 @@ func _score_goal(team: String) -> void:
 	_shake = 16.0
 	ball.ball_time_scale = 1.0
 	_popup_goal()
-	# fim imediato: goleada (5 de diferença) ou gol de ouro na morte súbita
-	if absi(score["home"] - score["away"]) >= 5 or sudden_death:
-		_finish_match()
+	if over:
 		return
 	await get_tree().create_timer(2.0).timeout
 	if not over:
@@ -549,14 +595,15 @@ func _spawn_trail(spd: float) -> void:
 	tw.tween_property(dot, "scale", Vector2(0.2, 0.2), 0.33)
 	tw.chain().tween_callback(dot.queue_free)
 
-func _finish_match() -> void:
+## Fim por pontuação-alvo (Doc 3): venceu = bateu o alvo (ou bateu antes do tempo).
+func _finish_by_target(won: bool) -> void:
 	if over: return
 	over = true
-	var home_won: bool = score["home"] >= score["away"]   # ST resolvida não empata
-	_goal_lbl.text = "FIM  %d x %d" % [score["home"], score["away"]]
+	var pts: int = _score.total if _score else 0
+	_goal_lbl.text = ("ALVO BATIDO!  %d / %d" % [pts, _target]) if won else ("FALHOU  %d / %d" % [pts, _target])
 	_goal_lbl.modulate = Color(1, 1, 1, 1)
-	await get_tree().create_timer(1.6).timeout
-	match_over.emit(home_won)
+	await get_tree().create_timer(1.8).timeout
+	match_over.emit(won)
 
 # ==========================================================================
 #  CAMPO / HUD
@@ -634,16 +681,31 @@ func _build_hud() -> void:
 	row.add_theme_constant_override("separation", 8)
 	top.add_child(row)
 	row.add_child(_team_badge(GameState.home_img(), _home_name, _home_crest, UI.HOME))
-	row.add_child(_score_plate())
+	row.add_child(_score_plate())   # agora mostra a PONTUAÇÃO total (Balatro)
 	row.add_child(_team_badge(GameState.away_img(), _away_name, _away_crest, UI.AWAY))
 
-	# relógio + posse, logo abaixo do placar (também centralizado)
+	# barra de progresso até a pontuação-alvo (Doc 3 §3)
+	_prog = ProgressBar.new()
+	_prog.custom_minimum_size = Vector2(300, 12)
+	_prog.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_prog.min_value = 0; _prog.max_value = _target; _prog.value = 0
+	_prog.show_percentage = false
+	_prog.add_theme_stylebox_override("background", UI.sbf(UI.PANEL2, UI.BRONZE, 1, 6, 0, 0))
+	_prog.add_theme_stylebox_override("fill", UI.sbf(UI.GOLD, UI.GOLD, 0, 6, 0, 0))
+	top.add_child(_prog)
+	_target_lbl = _chip("ALVO  0 / %d" % _target, 11, UI.GOLD2)
+	_target_lbl.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	top.add_child(_target_lbl)
+
+	# linha de baixo: chips×mult da posse · relógio · posse
 	var sub := HBoxContainer.new()
 	sub.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	sub.add_theme_constant_override("separation", 16)
 	top.add_child(sub)
+	_chips_lbl = _chip("🎰 0 × 1", 14, UI.RUNE)
 	_clock_lbl = _chip("0'", 14, UI.RUNE)
 	_poss_lbl = _chip("• bola livre •", 13, UI.RUNE2)
+	sub.add_child(_chips_lbl)
 	sub.add_child(_clock_lbl)
 	sub.add_child(_poss_lbl)
 
@@ -720,7 +782,7 @@ func _score_plate() -> Control:
 		var pnl := UI.framed(UI.PANEL2, UI.GOLD)
 		pnl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 		holder.add_child(pnl)
-	_score_lbl = _tag("0  —  0", 30, UI.GOLD2)
+	_score_lbl = _tag("0", 34, UI.GOLD2)      # PONTUAÇÃO total da partida (Balatro)
 	_score_lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_score_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_score_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -780,6 +842,8 @@ func _fire_super_shot(shooter: Player, side: String) -> void:
 	var corner_y := GOAL_TOP + 20.0 if randf() < 0.5 else GOAL_BOT - 20.0
 	var aim := Vector2(goal_x(side), corner_y)
 	ball.kick(aim - shooter.global_position, 1320.0, randf_range(-0.7, 0.7), 0.0)
+	if side == "home" and _score:
+		_score.action("finalizacao")
 	_in_flight = true; carrier = null; _save_rolled = false
 	_enter_super_climax()
 	_play_cutin(side)
@@ -841,6 +905,14 @@ func _lbl(pos: Vector2, size: int, col: Color) -> Label:
 	l.add_theme_constant_override("outline_size", 5)
 	return l
 
+## "Número que pula" do Balatro: dá um tranco de escala no total ao pontuar.
+func _score_pop(_gained: int) -> void:
+	if _score_lbl == null: return
+	_score_lbl.pivot_offset = _score_lbl.size / 2.0
+	_score_lbl.scale = Vector2(1.45, 1.45)
+	var tw := create_tween()
+	tw.tween_property(_score_lbl, "scale", Vector2(1, 1), 0.28).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
 func _popup_goal() -> void:
 	_goal_lbl.text = "G O O O L !"
 	_goal_lbl.modulate = Color(1, 1, 1, 0)
@@ -853,13 +925,17 @@ func _popup_goal() -> void:
 	tw.chain().tween_property(_goal_lbl, "modulate:a", 0.0, 0.4)
 
 func _hud_update() -> void:
-	_score_lbl.text = "%d  —  %d" % [score["home"], score["away"]]
-	# relógio estilo transmissão: minutos decorridos (0'..90'), prorrogação na M.SÚBITA
-	if sudden_death:
-		_clock_lbl.text = "PRORROGAÇÃO"
-		_clock_lbl.add_theme_color_override("font_color", UI.GOLD2)
-	else:
-		_clock_lbl.text = "%d'" % clampi(int(MATCH_SECONDS - clock), 0, 99)
+	# PONTUAÇÃO Balatro (Doc 3): total na placa, progresso até o alvo, chips×mult
+	if _score != null:
+		_score_lbl.text = str(_score.total)
+		_prog.value = mini(_score.total, _target)
+		_target_lbl.text = "ALVO  %d / %d" % [_score.total, _target]
+		_chips_lbl.text = "🎰 %d × %.1f" % [_score.chips, _score.mult]
+		if _home_has_poss:
+			_chips_lbl.add_theme_color_override("font_color", UI.GOLD2)
+		else:
+			_chips_lbl.add_theme_color_override("font_color", UI.RUNE2)
+	_clock_lbl.text = "%d'" % clampi(int(MATCH_SECONDS - clock), 0, 99)
 	# indicador de posse: ponto colorido + nome do time com a bola
 	if poss == "home":
 		_poss_lbl.text = "● " + _home_name

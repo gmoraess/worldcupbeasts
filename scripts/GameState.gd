@@ -129,6 +129,7 @@ var reservas: Array = []           # ids no banco
 var beast_id: String = ""          # == capita (compat. com telas antigas)
 var beast: Dictionary = {}         # == POOL[capita] (compat.)
 var relics: Array = []
+var jokers: Array = []             # Doc 3 §4 — ids de jokers (relíquias de pontuação)
 var gold: int = 20
 var extra_life: bool = true
 var act: int = 0
@@ -144,6 +145,7 @@ func start_run(p_captain_id: String) -> void:
 	titulares = build_default_squad(p_captain_id)
 	reservas = _pick_reserves(titulares, 2)
 	relics = []
+	jokers = ["matador"]            # joker inicial (Doc 3) — combos crescem na corrida
 	gold = 20
 	extra_life = true
 	act = 0; col = -1; lane = 1
@@ -220,6 +222,16 @@ func away_stats() -> Dictionary:
 func enemy_name() -> String:
 	return current_node.get("enemy", {}).get("name", "Oponente")
 
+## Pontuação-alvo do nó atual (Doc 3). Fallback p/ cena solta.
+func target() -> int:
+	return current_node.get("enemy", {}).get("target", 80)
+
+const ModifiersLib = preload("res://scripts/data/Modifiers.gd")
+
+## Jokers do jogador resolvidos em dicts (p/ o ScoreEngine).
+func player_jokers() -> Array:
+	return ModifiersLib.resolve(jokers)
+
 # ==========================================================================
 #  GERAÇÃO DE SQUAD INIMIGO (saca do mesmo pool, escala por ato/tier)
 # ==========================================================================
@@ -246,8 +258,17 @@ func _make_enemy(tier: String, a: int, boss_id: String = "") -> Dictionary:
 		for id in ids:
 			var fin: float = POOL[id]["stats"]["fin"]
 			if fin > best: best = fin; leader = id
-	return {"name": POOL[leader]["nome"], "crest": POOL[leader]["crest"],
-		"leader": leader, "stats": _scaled(POOL[leader]["stats"], f), "squad": squad}
+	var target := _target_for(tier, a)
+	return {"name": POOL[leader]["nome"], "crest": POOL[leader]["crest"], "leader": leader,
+		"stats": _scaled(POOL[leader]["stats"], f), "squad": squad, "target": target}
+
+## Pontuação-alvo da blind (Doc 3 §3.3) — escala por tier e ato. Calibrada pro
+## patamar real (~250–390 pts/90s no ato 1); cresce com o ato (build do jogador).
+func _target_for(tier: String, a: int) -> int:
+	match tier:
+		"boss":  return 320 + a * 170           # A1 320 · A2 490 · A3 660
+		"elite": return 240 + a * 90            # A1 240 · A2 330 · A3 420
+		_:       return 170 + a * 60            # normal: A1 170 · A2 230 · A3 290
 
 func _scaled(stats: Dictionary, f: float) -> Dictionary:
 	var out := {}

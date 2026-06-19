@@ -46,5 +46,12 @@ Futebol N×N que **emerge da física + IA** (autobattler: você assiste, sem com
 ### SPEC §1 — Squad de 5 feras (fundação) ✅
 Troca de "1 fera = time" por **time de 5** de um **pool compartilhado de 15** (os 15 retratos viram o pool). `GameState` reescrito: pool com papel/tags/super/frase/stats, **tiers** (comuns / elites / chefes por ato), **squad** (5 titulares + capitã + reservas), squads padrão **determinísticos e parelhos** por capitã. A partida agora dá **1 perfil por jogador** (cada um no campo é uma fera). Inimigos sacam do mesmo pool por tier (normal=comuns, elite=+elites, chefe=chefe+elite+comuns). Seleção escolhe a **capitã** (mostra o time); HUD/mapa usam retratos do pool. Validado headless (`test_balance` reescrito p/ squads): paridade ~10 pts entre capitãs, calibração 92% (squad forte vence), ~1 gol/lado.
 
+### Doc 3 — Camada Balatro (pontuação) 🔄
+**Muda a condição de vitória:** de saldo de gols → **pontuação-alvo** (blind). Cada **posse é uma "mão"** que acumula `chips × mult`; ao fechar (perder a bola/marcar), soma `round(chips×mult)` no total. **Vencer = bater o alvo** do nó dentro dos 90s (morte súbita aposentada).
+- **§3 Pontuação** ✅ — `ScoreEngine.gd` (chips por ação: passe +1, lançamento +3, desarme +5, finalização +5, gol +30, super-gol +60); placar Balatro no HUD (total na placa com "número pulando", barra até o alvo, `chips×mult` da posse).
+- **§4 Jokers** ✅ — `Modifiers.gd` (data-driven gatilho×condição×efeito): Matador (+1 mult/gol), Fúria Ímpar (×3 em gol ímpar), Tiki-Taka (+50 se 4+ passes), Carrinho Elétrico, Violência Recompensada, Artilharia. Jogador começa com 1 joker.
+- **Alvos** por tier/ato (normal 170+, elite 240+, boss 320+), calibrados pro patamar real (~250–390 pts/90s). Headless: paridade ~87 pts entre capitãs, forte pontua ~50% mais que fraco.
+- **Falta no Doc 3:** §6 combate+HP, §5 cartas de partida, §6.3 relíquias por jogador, §7 fonte m6x11plus, jokers como recompensa na corrida.
+
 ### Notas / pendências
 - **Polimento de Etapa 1 (feel):** movimento off-ball / steering pra criar linhas de passe e diminuir o aglomerado (a trava anti cabo-de-guerra resolve o teto, não a frequência). Melhor com playtest visual.
