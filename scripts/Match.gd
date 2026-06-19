@@ -6,6 +6,7 @@ extends Node2D
 const Ball = preload("res://scripts/Ball.gd")
 const Player = preload("res://scripts/Player.gd")
 const ScoreEngineLib = preload("res://scripts/match/ScoreEngine.gd")
+const MatchCardsLib = preload("res://scripts/match/MatchCards.gd")
 
 signal match_over(home_won: bool)   # avisa o roteador quando a partida termina
 
@@ -75,6 +76,12 @@ var _target_lbl: Label
 var _chips_lbl: Label
 var _prog: ProgressBar
 
+# — CARTAS DE PARTIDA (Doc 3 §5) —
+var _hand: Array = []          # ids das poções na mão
+var _next_shot_pot := 1.0      # multiplicador da PRÓXIMA finalização (poção Mira)
+var _hand_layer: CanvasLayer = null
+var _targeting := ""           # id da carta esperando escolha de jogador ("" = nenhuma)
+
 func goal_x(team: String) -> float:
 	# o gol que o time ATACA
 	return FIELD.end.x if team == "home" else FIELD.position.x
@@ -103,8 +110,10 @@ func _ready() -> void:
 	_score = ScoreEngineLib.new()
 	_score.jokers = GameState.player_jokers()
 	_target = GameState.target()
+	_hand = MatchCardsLib.random_hand(3)
 
 	_build_hud()
+	_build_hand()
 	_kickoff("home")
 
 # ==========================================================================
@@ -168,6 +177,7 @@ func _physics_process(delta: float) -> void:
 
 	_update_possession(delta)
 	_combat_step(delta)           # porradaria: dano/nocaute (Doc 3 §6)
+	_super_shot_hits()            # super-chute atropela adversários no caminho
 	_anti_deadlock(delta)         # rede de segurança: bola presa em disputa > 3s
 	_gk_save()                    # goleiro defende (por lógica — a bola atravessa fisicamente)
 	_carry_ball()                 # cola a bola no pé do carregador (drible suave)
@@ -286,10 +296,41 @@ func _combat_step(_delta: float) -> void:
 		if opp.team == "home" and _score: _score.action("porrada")
 		var victim := carrier
 		var knocked: bool = victim.take_damage(22.0 * clampf(aggro, 0.6, 1.5))
+		_hit_burst(victim.global_position, knocked)
 		if knocked:
 			if opp.team == "home" and _score: _score.action("nocaute")
 			if carrier == victim:
 				carrier = null          # carregador nocauteado solta a bola (fica solta)
+
+## Estrela de impacto ("POW") no ponto da pancada — feedback visual do dano/nocaute.
+func _hit_burst(pos: Vector2, big: bool) -> void:
+	var star := Polygon2D.new()
+	var pts := PackedVector2Array()
+	for i in 12:
+		var a := TAU * float(i) / 12.0
+		var r := (20.0 if i % 2 == 0 else 9.0) * (1.7 if big else 1.0)
+		pts.append(Vector2(cos(a), sin(a)) * r)
+	star.polygon = pts
+	star.color = Color(1, 0.85, 0.3) if big else Color(1, 0.5, 0.2)
+	star.global_position = pos
+	star.z_index = 50
+	star.scale = Vector2(0.3, 0.3)
+	add_child(star)
+	var tw := create_tween(); tw.set_parallel(true)
+	tw.tween_property(star, "scale", Vector2(1.5, 1.5) if big else Vector2(1.05, 1.05), 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(star, "modulate:a", 0.0, 0.32)
+	tw.chain().tween_callback(star.queue_free)
+
+## Super-chute é um aríete: adversários no caminho da bola perdem HP (Doc 3 / pedido).
+func _super_shot_hits() -> void:
+	if _super_shot_live == "": return
+	for p in all:
+		if p.team == _super_shot_live or p.ko or p.hit_cd > 0.0: continue
+		if p.global_position.distance_to(ball.global_position) < 17.0:
+			p.hit_cd = 0.5
+			var knocked: bool = p.take_damage(26.0)
+			_hit_burst(p.global_position, knocked)
+			_shake = maxf(_shake, 6.0)
 
 ## Bola disputada: há jogadores dos DOIS times bem perto dela (scrum/cabo-de-guerra).
 func _ball_contested() -> bool:
@@ -430,7 +471,10 @@ func _carrier_decide() -> void:
 		var fin: float = carrier.stats.get("fin", 1.0)
 		var noise := (1.6 - clampf(fin, 0.5, 1.5)) * 60.0
 		var aim := goal_c + Vector2(0, randf_range(-noise, noise))
-		ball.kick(aim - carrier.global_position, 780.0 + fin * 220.0, randf_range(-1.2, 1.2) * (1.4 - fin), 0.0)
+		var pot := 780.0 + fin * 220.0
+		if carrier.team == "home":
+			pot *= _next_shot_pot; _next_shot_pot = 1.0          # poção Mira Certeira
+		ball.kick(aim - carrier.global_position, pot, randf_range(-1.2, 1.2) * (1.4 - fin), 0.0)
 		if carrier.team == "home" and _score:
 			_score.action("finalizacao")
 		_in_flight = true; carrier = null; _save_rolled = false
@@ -865,7 +909,10 @@ func _fire_super_shot(shooter: Player, side: String) -> void:
 	_super_shot_live = side
 	var corner_y := GOAL_TOP + 20.0 if randf() < 0.5 else GOAL_BOT - 20.0
 	var aim := Vector2(goal_x(side), corner_y)
-	ball.kick(aim - shooter.global_position, 1320.0, randf_range(-0.7, 0.7), 0.0)
+	var pot := 1320.0
+	if side == "home":
+		pot *= _next_shot_pot; _next_shot_pot = 1.0
+	ball.kick(aim - shooter.global_position, pot, randf_range(-0.7, 0.7), 0.0)
 	if side == "home" and _score:
 		_score.action("finalizacao")
 	_in_flight = true; carrier = null; _save_rolled = false
@@ -920,6 +967,106 @@ func _play_cutin(side: String) -> void:
 	tw.tween_interval(0.65)
 	tw.tween_property(card, "position:x", start_x, 0.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
 	tw.tween_callback(_cutin_layer.queue_free)
+
+# ==========================================================================
+#  CARTAS DE PARTIDA (Doc 3 §5) — poções com auto-pause
+# ==========================================================================
+func _build_hand() -> void:
+	_hand_layer = CanvasLayer.new(); _hand_layer.layer = 40
+	_hand_layer.process_mode = Node.PROCESS_MODE_ALWAYS    # clicável mesmo pausado
+	add_child(_hand_layer)
+	_refresh_hand()
+
+func _refresh_hand() -> void:
+	for c in _hand_layer.get_children(): c.queue_free()
+	if _hand.is_empty(): return
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	_hand_layer.add_child(row)
+	# faixa de largura total logo ACIMA da borda inferior (cartas centralizadas)
+	row.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	row.offset_left = 0; row.offset_right = 0
+	row.offset_top = -96; row.offset_bottom = -14
+	for i in _hand.size():
+		row.add_child(_card_btn(_hand[i], i))
+
+func _card_btn(id: String, idx: int) -> Button:
+	var card: Dictionary = MatchCardsLib.POOL[id]
+	var col: Color = UI.GOLD2 if card["tipo"] == "pontuacao" else UI.HOME
+	var b := Button.new()
+	b.custom_minimum_size = Vector2(184, 78)
+	b.add_theme_stylebox_override("normal", UI.sbf(UI.PANEL, col, 2, 9, 8, 6))
+	b.add_theme_stylebox_override("hover", UI.sbf(UI.PANEL2, UI.GOLD2, 2, 9, 8, 6))
+	b.add_theme_font_size_override("font_size", 12)
+	b.add_theme_color_override("font_color", UI.RUNE)
+	b.add_theme_color_override("font_hover_color", UI.GOLD2)
+	b.text = "%s %s\n%s" % [card["ic"], card["nome"], card["desc"]]
+	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	b.clip_text = false
+	b.pressed.connect(_use_card.bind(idx))
+	return b
+
+## Clicar numa carta → PAUSA o jogo; se precisa de alvo, escolhe o jogador.
+func _use_card(idx: int) -> void:
+	if over or idx >= _hand.size() or _targeting != "": return
+	var id: String = _hand[idx]
+	var card: Dictionary = MatchCardsLib.POOL[id]
+	get_tree().paused = true
+	if card["alvo"] == "jogador_alvo":
+		_targeting = id
+		_show_target_picker(idx)
+	else:
+		_apply_card(card, null)
+		_consume_card(idx)
+		get_tree().paused = false
+
+func _show_target_picker(idx: int) -> void:
+	var panel := PanelContainer.new()
+	panel.name = "picker"
+	panel.add_theme_stylebox_override("panel", UI.sbf(UI.PANEL2, UI.GOLD, 2, 10, 14, 12))
+	panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	panel.offset_left = -200; panel.offset_right = 200; panel.offset_top = -90; panel.offset_bottom = 90
+	_hand_layer.add_child(panel)
+	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 6); panel.add_child(v)
+	v.add_child(UI.clbl("Escolha um jogador", 15, UI.GOLD2))
+	for p in home:
+		var b := UI.gold_btn("%s · HP %d/%d" % [p.role.to_upper(), int(p.hp), int(p.hp_max)], 12)
+		b.pressed.connect(_pick_target.bind(p, idx))
+		v.add_child(b)
+
+func _pick_target(p: Player, idx: int) -> void:
+	if _targeting == "": return
+	_apply_card(MatchCardsLib.POOL[_targeting], p)
+	_targeting = ""
+	_consume_card(idx)
+	get_tree().paused = false
+
+func _consume_card(idx: int) -> void:
+	if idx < _hand.size(): _hand.remove_at(idx)
+	_refresh_hand()
+
+## Aplica o efeito da carta (físico no jogador/time, ou de pontuação Balatro).
+func _apply_card(card: Dictionary, who: Player) -> void:
+	var e: Dictionary = card["efeito"]
+	match card["alvo"]:
+		"jogador_alvo":
+			if who != null: _apply_physical(e, [who])
+		"todos":
+			_apply_physical(e, home)
+		"time":
+			if e.has("next_shot_pot"): _next_shot_pot = float(e["next_shot_pot"])
+			if e.has("recarrega_furia"): _fury["home"] = 100.0; _super_ready["home"] = true
+		"pontuacao":
+			if _score != null:
+				if e.has("chips"): _score.chips += int(e["chips"])
+				if e.has("add_mult"): _score.mult += float(e["add_mult"])
+				if e.has("x_mult"): _score.mult *= float(e["x_mult"])
+
+func _apply_physical(e: Dictionary, players: Array) -> void:
+	for p in players:
+		if e.has("cura_hp"): p.heal(float(e["cura_hp"]))
+		if e.has("vel_burst"): p.apply_speed(float(e["vel_burst"]), float(e.get("dur_s", 5.0)))
 
 func _lbl(pos: Vector2, size: int, col: Color) -> Label:
 	var l := Label.new(); l.position = pos

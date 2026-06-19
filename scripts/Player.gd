@@ -23,8 +23,19 @@ var hp := 120.0
 var ko := false               # nocauteado (fora do campo por alguns segundos)
 var ko_t := 0.0
 var hit_cd := 0.0             # cooldown entre porradas (anti-abuso)
+var vel_mult := 1.0           # buff de velocidade (poções §5)
+var vel_mult_t := 0.0
 var _hp_bg: ColorRect
 var _hp_fill: ColorRect
+
+## Buff de velocidade temporário (poção Adrenalina/Fôlego Coletivo).
+func apply_speed(mult: float, dur: float) -> void:
+	vel_mult = mult
+	vel_mult_t = dur
+
+func heal(amount: float) -> void:
+	hp = minf(hp_max, hp + amount)
+	_refresh_hp_bar()
 
 var _sprite: Polygon2D
 
@@ -83,6 +94,10 @@ func take_damage(d: float) -> bool:
 	if hp <= 0.0:
 		_knockout()
 		return true
+	# clarão branco rápido — feedback de que levou a pancada
+	_sprite.modulate = Color(2.2, 2.2, 2.2, 1.0)
+	var tw := create_tween()
+	tw.tween_property(_sprite, "modulate", Color(1, 1, 1, 1), 0.18)
 	return false
 
 func _knockout() -> void:
@@ -125,13 +140,16 @@ func _physics_process(delta: float) -> void:
 		if ko_t <= 0.0:
 			_revive()
 		return                      # nocauteado: não se move (desfalque numérico)
+	if vel_mult_t > 0.0:
+		vel_mult_t -= delta
+		if vel_mult_t <= 0.0: vel_mult = 1.0
 	var to := target - global_position
 	var dist := to.length()
 	var desired := Vector2.ZERO
 	if dist > 4.0:
-		var sp := max_speed
+		var sp := max_speed * vel_mult
 		if dist < 24.0:
-			sp = max_speed * (dist / 24.0)   # arrive: desacelera perto do alvo
+			sp = max_speed * vel_mult * (dist / 24.0)   # arrive: desacelera perto do alvo
 		desired = to.normalized() * sp
 	# acelera rápido quando ganha velocidade; FREIA mais rápido ainda (anti-gelo)
 	var rate := accel if desired.length() >= velocity.length() - 1.0 else decel
