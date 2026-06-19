@@ -39,6 +39,9 @@ var _save_rolled := false     # 1 tentativa de defesa por chute
 var _shot_cd := 0.0           # cooldown global de chute (controla o placar)
 var _pass_to: Player = null   # destinatário do passe (corre pra receber)
 var _pass_t := 0.0            # janela do passe
+var _stuck_t := 0.0           # tempo com a bola "presa" num ponto (anti cabo-de-guerra)
+var _stuck_ref := MID         # posição de referência pra medir o deslocamento da bola
+var _scrambles := 0           # quantas vezes a trava anti-cabo-de-guerra atuou (telemetria)
 
 var _score_lbl: Label
 var _clock_lbl: Label
@@ -108,6 +111,8 @@ func _kickoff(team: String) -> void:
 	_climax = false
 	_in_flight = false
 	_steal_cd = 0.0
+	_stuck_t = 0.0
+	_stuck_ref = ball.global_position
 	ball.ball_time_scale = 1.0
 
 # ==========================================================================
@@ -129,6 +134,7 @@ func _physics_process(delta: float) -> void:
 				sudden_death = true   # empate no tempo → morte súbita (gol de ouro)
 
 	_update_possession(delta)
+	_anti_deadlock(delta)         # rede de segurança: bola presa em disputa > 3s
 	_gk_save()                    # goleiro defende (por lógica — a bola atravessa fisicamente)
 	_carry_ball()                 # cola a bola no pé do carregador (drible suave)
 	_decide -= delta
@@ -182,6 +188,70 @@ func _set_carrier(p: Player) -> void:
 	_in_flight = false
 	_pass_to = null
 	_steal_cd = maxf(_steal_cd, 0.3)
+
+## Anti cabo-de-guerra: se a bola fica num raio pequeno por mais de 3s (disputa
+## parada, ninguém progride), alguém "ganha o bate-pé" e ela escapa do amontoado.
+## Mede pelo DESLOCAMENTO da bola — passe/chute/condução normais a tiram da zona.
+func _anti_deadlock(delta: float) -> void:
+	# só conta como "preso" quando a bola não progride E está DISPUTADA (jogadores
+	# dos dois times coladinhos) — é o cabo-de-guerra; posse limpa não dispara.
+	if over or _goal_cd > 0.0 or ball.global_position.distance_to(_stuck_ref) > 60.0 or not _ball_contested():
+		_stuck_ref = ball.global_position
+		_stuck_t = 0.0
+		return
+	_stuck_t += delta
+	if _stuck_t >= 3.0:
+		_break_scramble()
+		_stuck_t = 0.0
+		_stuck_ref = ball.global_position
+
+## Bola disputada: há jogadores dos DOIS times bem perto dela (scrum/cabo-de-guerra).
+func _ball_contested() -> bool:
+	var has_home := false
+	var has_away := false
+	for p in all:
+		if p.global_position.distance_to(ball.global_position) < 46.0:
+			if p.team == "home": has_home = true
+			else: has_away = true
+	return has_home and has_away
+
+## Resolve a disputa parada: o jogador mais perto escapa a bola pra frente, longe
+## do aglomerado, e trava o roubo por um tempinho (não re-prende na hora).
+func _break_scramble() -> void:
+	var p := _closest_any()
+	if p == null: return
+	_scrambles += 1
+	# "joga pra fora da pressão": manda a bola DECISIVAMENTE pra um companheiro em
+	# espaço (não é chute a gol → não infla placar) e, sem opção, pra longe do
+	# aglomerado adversário. Limpa o scrum de vez (não fica cutucando).
+	var mate := _best_pass(p)
+	var target: Vector2
+	if mate != null:
+		target = mate.global_position
+		_pass_to = mate; _pass_t = 1.5
+	else:
+		target = ball.global_position + _escape_dir(p) * 280.0
+		_pass_to = null
+	var to := target - ball.global_position
+	ball.kick(to, clampf(to.length() * 2.2, 460.0, 760.0), 0.0, 0.0)
+	_in_flight = true
+	carrier = null
+	_save_rolled = false
+	_steal_cd = 1.2
+	_shake = maxf(_shake, 5.0)
+
+## Direção de fuga do scrum: média apontando PARA LONGE dos adversários próximos.
+func _escape_dir(p: Player) -> Vector2:
+	var acc := Vector2.ZERO
+	for o in all:
+		if o.team == p.team: continue
+		var d := ball.global_position - o.global_position
+		if d.length() < 130.0:
+			acc += d.normalized()
+	if acc.length() < 0.1:
+		var atk := 1.0 if p.team == "home" else -1.0
+		acc = Vector2(atk, randf_range(-0.5, 0.5))
+	return acc.normalized()
 
 ## Defesa do goleiro: 1 tentativa por chute. Se a bola passa coladinha no GK,
 ## ele espalma (chance alta, enviesada por 'def'). Como ele fecha o ângulo,
@@ -275,7 +345,9 @@ func _carrier_decide() -> void:
 		_pass_to = mate; _pass_t = 1.4         # o companheiro corre pra receber → conecta
 		_in_flight = true; carrier = null; _save_rolled = false
 		return
-	# senão, segue driblando (o _carry_ball + o alvo rumo ao gol cuidam do resto)
+	# senão, segue driblando (o _carry_ball + o alvo rumo ao gol cuidam do resto);
+	# se travar cercado, a rede de segurança _anti_deadlock resolve em até 3s
+
 
 func _best_pass(from: Player) -> Player:
 	var gx := goal_x(from.team)

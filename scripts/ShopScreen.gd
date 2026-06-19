@@ -2,11 +2,12 @@ extends Control
 ## Loja — comprar relíquias com ouro.
 signal shop_done
 
-const PRICE := 25
+var price := 25
 var offers: Array = []
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	price = GameState.shop_price()
 	offers = GameState.random_relic_choices(3)
 	_build()
 
@@ -41,11 +42,11 @@ func _buy_card(id: String) -> Control:
 	v.add_child(UI.lbl(data["name"], 14, UI.GOLD2))
 	v.add_child(UI.lbl(data["desc"], 11, UI.RUNE2))
 	h.add_child(v)
-	var b := UI.gold_btn("🪙 %d" % PRICE)
-	b.disabled = GameState.gold < PRICE
+	var b := UI.gold_btn("🪙 %d" % price)
+	b.disabled = GameState.gold < price
 	b.pressed.connect(func():
-		if GameState.gold >= PRICE:
-			GameState.gold -= PRICE
+		if GameState.gold >= price:
+			GameState.gold -= price
 			GameState.add_relic(id)
 			offers.erase(id)
 			_build())

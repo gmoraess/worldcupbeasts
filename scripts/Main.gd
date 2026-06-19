@@ -52,7 +52,9 @@ func _on_match_over(home_won: bool) -> void:
 		"victory": _msg("🏆 CAMPEÃO!", "%s conquistou a Copa dos Mil Anos!" % GameState.beast.get("name", ""), _show_beast_select, true)
 		"defeat": _msg("💀 DERROTA", "%s caiu. Fim da jornada." % GameState.beast.get("name", ""), _show_beast_select, false)
 		"repechage": _msg("❤️ REPESCAGEM", "Você perdeu, mas tinha uma vida extra. Segue na Copa!", _show_map, true)
-		"act_clear": _msg("👑 ATO %d / 3" % GameState.act, "Ato anterior conquistado! Avance.", _show_map, true)
+		"act_clear":
+			# boss vencido → recompensa de relíquia, depois anuncia o ato e segue
+			_show_relic(func(_id): _msg("👑 ATO %d / 3" % GameState.act, "Ato anterior conquistado! Avance.", _show_map, true))
 		"continue":
 			var tp: String = GameState.current_node.get("type", "")
 			if home_won and tp in ["elite", "boss"]:

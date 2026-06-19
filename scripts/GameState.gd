@@ -12,13 +12,13 @@ const BEASTS := {
 		"stats": {"fin": 0.85, "ctrl": 1.05, "des": 1.25, "def": 1.32, "spd": 0.95, "sta": 1.20},
 		"lore": "O tatu couraçado. Muralha viva — difícil de furar."},
 	"zab": {"name": "Zab", "crest": "🐺", "type": "Caçador",
-		"stats": {"fin": 1.00, "ctrl": 0.95, "des": 1.32, "def": 1.00, "spd": 1.08, "sta": 1.15},
+		"stats": {"fin": 1.05, "ctrl": 1.00, "des": 1.32, "def": 1.09, "spd": 1.08, "sta": 1.15},
 		"lore": "O lobo implacável. Caça por desgaste e bote."},
 	"zak": {"name": "Zak", "crest": "🐆", "type": "Veloz",
-		"stats": {"fin": 1.05, "ctrl": 1.28, "des": 0.92, "def": 0.92, "spd": 1.32, "sta": 1.00},
+		"stats": {"fin": 1.02, "ctrl": 1.12, "des": 0.92, "def": 0.92, "spd": 1.16, "sta": 1.00},
 		"lore": "O guepardo relâmpago. Controle e contra-ataque."},
 	"foot": {"name": "Foot", "crest": "🐓", "type": "Artilheiro",
-		"stats": {"fin": 1.38, "ctrl": 1.05, "des": 0.90, "def": 0.85, "spd": 1.12, "sta": 0.95},
+		"stats": {"fin": 1.38, "ctrl": 1.08, "des": 0.98, "def": 1.00, "spd": 1.08, "sta": 0.95},
 		"lore": "O galo de briga. Gol no instinto."},
 }
 
@@ -41,15 +41,30 @@ const BOSSES := [
 	{"name": "Quetzal, a Serpente Imortal", "crest": "🐉", "stats": {"fin": 1.35, "ctrl": 1.3, "des": 1.2, "def": 1.3, "spd": 1.25, "sta": 1.3}},
 ]
 
-# relíquias — mexem em PARÂMETROS FÍSICOS (mods aplicados ao time do jogador)
+# relíquias — mexem em PARÂMETROS FÍSICOS (mods aplicados ao time do jogador).
+# valores + ou − no stat (suporta contrapartida). Pool variado pra loja seguir
+# relevante na corrida inteira (escolha real, não "junta tudo").
 const RELICS := {
+	# simples (1 stat) — bloco básico
 	"chuteira_rapida": {"name": "Chuteira Veloz", "ic": "⚡", "desc": "+velocidade do time", "mods": {"spd_mult": 0.12}},
 	"bota_craque":     {"name": "Bota de Craque", "ic": "👟", "desc": "+potência/precisão de chute", "mods": {"fin_mult": 0.18}},
 	"luvas_goleiro":   {"name": "Luvas do Goleiro", "ic": "🧤", "desc": "+alcance/defesa do goleiro", "mods": {"def_mult": 0.20}},
 	"garra_afiada":    {"name": "Garra Afiada", "ic": "🐾", "desc": "+força do bote/desarme", "mods": {"des_mult": 0.20}},
 	"coracao_ferro":   {"name": "Coração de Ferro", "ic": "🔥", "desc": "+fôlego (menos fadiga)", "mods": {"sta_mult": 0.20}},
 	"imã_da_bola":     {"name": "Imã da Bola", "ic": "🧲", "desc": "+controle (segura a bola)", "mods": {"ctrl_mult": 0.20}},
+	# duplo efeito (2 stats menores) — recompensa quem combina
+	"manto_sombrio":   {"name": "Manto Sombrio", "ic": "🌑", "desc": "+velocidade e +desarme", "mods": {"spd_mult": 0.08, "des_mult": 0.10}},
+	"elmo_guardiao":   {"name": "Elmo do Guardião", "ic": "⛑", "desc": "+defesa e +fôlego", "mods": {"def_mult": 0.12, "sta_mult": 0.10}},
+	"garras_gemeas":   {"name": "Garras Gêmeas", "ic": "✌", "desc": "+desarme e +finalização", "mods": {"des_mult": 0.12, "fin_mult": 0.10}},
+	# contrapartida (sobe forte, abre mão de algo) — build de risco
+	"talisma_furia":   {"name": "Talismã da Fúria", "ic": "😤", "desc": "++chute e velocidade, −defesa", "mods": {"fin_mult": 0.22, "spd_mult": 0.08, "def_mult": -0.10}},
+	"couraca_antiga":  {"name": "Couraça Antiga", "ic": "🛡", "desc": "++defesa e controle, −velocidade", "mods": {"def_mult": 0.18, "ctrl_mult": 0.10, "spd_mult": -0.08}},
+	"essencia_veloz":  {"name": "Essência Veloz", "ic": "💨", "desc": "++velocidade e controle, −fôlego", "mods": {"spd_mult": 0.18, "ctrl_mult": 0.08, "sta_mult": -0.08}},
 }
+
+## Preço da loja escala por ato (tensão econômica: ouro vale mais cedo).
+func shop_price() -> int:
+	return 25 + act * 10            # ato 1=25 · ato 2=35 · ato 3=45
 
 # ==========================================================================
 #  ESTADO DA CORRIDA

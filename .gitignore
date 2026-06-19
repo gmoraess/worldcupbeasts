@@ -5,3 +5,6 @@
 /build/
 *.exe
 *.pck
+
+# Logs gerados pelos testes de balanceamento (artefatos volumosos)
+tests/balance_*.txt
