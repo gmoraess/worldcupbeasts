@@ -37,10 +37,10 @@ func _card(id: String) -> Control:
 	h.add_theme_constant_override("separation", 14)
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	btn.add_child(h)
-	# crista
-	var cc := CenterContainer.new(); cc.custom_minimum_size = Vector2(70, 0)
+	# retrato (PNG) com fallback no emoji da crista
+	var cc := CenterContainer.new(); cc.custom_minimum_size = Vector2(108, 0)
 	cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cc.add_child(UI.clbl(data["crest"], 44, Color.WHITE))
+	cc.add_child(UI.icon("res://assets/beasts/%s.png" % id, Vector2(100, 132), data["crest"]))
 	h.add_child(cc)
 	# textos
 	var v := VBoxContainer.new()

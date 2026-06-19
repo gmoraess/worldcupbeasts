@@ -52,7 +52,7 @@ HUD                   -> broadcast minimalista (placar + relógio)
 - **Etapa 0 — Vertical slice da bola** ✅ — sandbox que prova que a bola é incrível (portão vai/não-vai). **Aprovado.**
 - **Etapa 1 — A partida** ✅ — futebol N×N que emerge da física + IA: movimento meio-termo (linha junta mas imperfeita), passes que conectam, defesa zonal, goleiro, placar realista.
 - **Etapa 2 — A corrida (roguelike)** ✅ — **jogável e balanceada**: `GameState` com feras como **perfis de stats que enviesam a física**, relíquias mexendo em **parâmetros físicos**, mapa de 3 atos, loja, eventos; roteador (seleção→mapa→partida→relíquia/evento/loja→resultado). Balanceamento validado headless (`tests/test_balance.gd`): paridade de **5,8 pts** entre as feras, **~1,2 gol/lado**, time melhor vence ~85-90%. Loja ampliada (12 relíquias, preço por ato). Trava **anti cabo-de-guerra** (bola nunca presa >3s).
-- **Etapa 3 — HUD broadcast + juice + arte** ⏳ — transmissão minimalista, feras como sprites, áudio.
+- **Etapa 3 — HUD broadcast + juice + arte** 🔄 — HUD de transmissão (placar com retratos + relógio + posse), **controle de velocidade** (Lento/Normal/Rápido), e retratos/ícones nas telas (PNGs temporários). Falta: fúria/supers/cut-ins, áudio e arte definitiva.
 - **Etapa 4 — Conteúdo e meta** ⏳ — mais feras, desbloqueáveis, balanceamento.
 
 ---

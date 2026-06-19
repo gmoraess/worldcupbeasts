@@ -112,6 +112,27 @@ func away_stats() -> Dictionary:
 func enemy_name() -> String:
 	return current_node.get("enemy", {}).get("name", "Oponente")
 
+# retratos (PNGs do projeto antigo, temporários) — nome do inimigo → arquivo
+const ENEMY_IMG := {
+	"Rinoceronte Sombrio": "rinoceronte", "Lobo da Névoa": "lobo", "Urso do Norte": "urso",
+	"Escorpião Ferreiro": "escorpiao", "Arara Carmesim": "arara",
+	"Elefante de Guerra": "elite_elefante", "Gorila das Sombras": "elite_gorila", "Tigre Relâmpago": "elite_tigre",
+	"Mantis da Tempestade": "boss_mantis", "Leão Dourado": "boss_leao", "Quetzal, a Serpente Imortal": "boss_quetzal",
+}
+
+## Caminho do retrato da fera do jogador (id == nome do arquivo). "" se indisponível.
+func home_img() -> String:
+	return "res://assets/beasts/%s.png" % beast_id if beast_id != "" else ""
+
+## Caminho do retrato do inimigo do nó atual. "" se indisponível.
+func away_img() -> String:
+	return enemy_img_path(current_node.get("enemy", {}))
+
+## Caminho do retrato de um inimigo qualquer (por nome). "" se indisponível.
+func enemy_img_path(enemy: Dictionary) -> String:
+	var f: String = ENEMY_IMG.get(enemy.get("name", ""), "")
+	return "res://assets/beasts/%s.png" % f if f != "" else ""
+
 # ==========================================================================
 #  MAPA (3 atos × colunas × raias)
 # ==========================================================================

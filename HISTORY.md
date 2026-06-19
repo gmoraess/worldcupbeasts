@@ -36,5 +36,11 @@ Futebol N×N que **emerge da física + IA** (autobattler: você assiste, sem com
 - **2C — valor da loja** ✅ — pool de relíquias **6 → 12** (com duplo-efeito e contrapartida, pra escolha real); preço da loja **escala por ato** (25/35/45); **boss agora dá relíquia** (antes só elite).
 - **2C — anti cabo-de-guerra** ✅ — a bola travava em disputa parada por mais de 1 minuto (jogadores se bloqueando fisicamente). Trava de segurança: se a bola fica num raio pequeno **e disputada** por >3s, alguém "ganha o bate-pé" e a bola escapa do amontoado (passe pra companheiro/alívio, com cooldown de roubo). Nenhum congelamento passa de 3s. *Nota: o motor ainda aglomera bastante (a trava dispara muitas vezes/partida); reduzir a frequência das disputas — não só o teto — é polimento de IA/steering pra fazer com playtest visual.*
 
-### Próximo — Etapa 3 (HUD broadcast + juice + arte)
-Transmissão minimalista, feras como sprites, áudio. **Candidato a polimento da Etapa 1:** movimento off-ball / steering pra criar linhas de passe e diminuir o aglomerado (feel).
+### Etapa 3 — HUD broadcast + arte 🔄 em andamento
+- **HUD de transmissão** ✅ — placar broadcast no topo (brasões/retratos casa×fora + placar na placa ornamentada `score_plate`), **relógio estilo futebol** (minutos `0'`→`90'`, "PRORROGAÇÃO" na morte súbita) e **indicador de posse** em tempo real. Centralização corrigida (full-width + shrink-center).
+- **Controle de velocidade** ✅ — botões **Lento (0,5x) · Normal (1x) · Rápido (2x)** no canto. Usa `Engine.time_scale` (passo de física fixo em 1/60 → 2x não tunela), resetado ao sair da partida.
+- **Arte (PNGs temporários do projeto antigo `football-autobattler`)** ✅ — retratos das feras na **seleção** e no cabeçalho do **mapa**; **ícones de nó** desenhados no mapa; retratos casa×fora no placar. Helper `UI.icon()` (textura com fallback p/ emoji) + mapeamento de retratos no `GameState`. *Esses PNGs são paliativos — a arte definitiva virá depois.*
+- **Falta na Etapa 3:** fúria + supers + cut-ins (agora com retrato disponível), áudio (precisa de assets), e arte definitiva.
+
+### Notas / pendências
+- **Polimento de Etapa 1 (feel):** movimento off-ball / steering pra criar linhas de passe e diminuir o aglomerado (a trava anti cabo-de-guerra resolve o teto, não a frequência). Melhor com playtest visual.

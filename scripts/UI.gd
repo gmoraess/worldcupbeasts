@@ -57,3 +57,23 @@ static func bg_rect(col: Color = STONE) -> ColorRect:
 	r.color = col
 	r.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	return r
+
+## Carrega uma textura se existir; senão null (seguro p/ arte ainda ausente).
+static func tex(path: String) -> Texture2D:
+	return load(path) if path != "" and ResourceLoader.exists(path) else null
+
+## Ícone visual: TextureRect com a arte (escala mantendo proporção) OU, se faltar
+## o PNG, um Label com o emoji de fallback. px = tamanho-alvo do ícone.
+static func icon(path: String, px: Vector2, fallback: String, col: Color = Color.WHITE) -> Control:
+	var t := tex(path)
+	if t != null:
+		var tr := TextureRect.new()
+		tr.texture = t
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.custom_minimum_size = px
+		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		return tr
+	var l := clbl(fallback, int(px.y * 0.55), col)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l

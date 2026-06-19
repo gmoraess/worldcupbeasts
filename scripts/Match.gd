@@ -46,6 +46,12 @@ var _scrambles := 0           # quantas vezes a trava anti-cabo-de-guerra atuou 
 var _score_lbl: Label
 var _clock_lbl: Label
 var _goal_lbl: Label
+var _poss_lbl: Label
+var _speed_btns: Array[Button] = []
+var _home_name := "CASA"
+var _away_name := "FORA"
+var _home_crest := "🛡"
+var _away_crest := "🦁"
 
 func goal_x(team: String) -> float:
 	# o gol que o time ATACA
@@ -561,12 +567,127 @@ func _goal(team: String) -> void:
 		dot.polygon = pts; dot.color = Color(1, 1, 1, 0.95); post.add_child(dot)
 
 func _build_hud() -> void:
+	# nomes/brasões dos dois lados (fallback se a cena rodar fora de uma corrida)
+	_home_crest = GameState.beast.get("crest", "🛡")
+	_home_name = GameState.beast.get("name", "CASA")
+	var enemy: Dictionary = GameState.current_node.get("enemy", {})
+	_away_crest = enemy.get("crest", "🦁")
+	_away_name = enemy.get("name", "FORA")
+
 	var layer := CanvasLayer.new(); add_child(layer)
-	_score_lbl = _lbl(Vector2(560, 14), 30, Color(1, 1, 1)); layer.add_child(_score_lbl)
-	_clock_lbl = _lbl(Vector2(600, 52), 16, Color(1, 0.95, 0.7)); layer.add_child(_clock_lbl)
+
+	# barra de transmissão: VBox full-width no topo; filhos CENTRALIZADOS (shrink-center)
+	# — centralização confiável (o anchor CENTER_TOP estava jogando a barra pra esquerda).
+	var top := VBoxContainer.new()
+	layer.add_child(top)
+	top.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	top.offset_top = 12
+	top.add_theme_constant_override("separation", 4)
+
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 8)
+	top.add_child(row)
+	row.add_child(_team_badge(GameState.home_img(), _home_name, _home_crest, UI.HOME))
+	row.add_child(_score_plate())
+	row.add_child(_team_badge(GameState.away_img(), _away_name, _away_crest, UI.AWAY))
+
+	# relógio + posse, logo abaixo do placar (também centralizado)
+	var sub := HBoxContainer.new()
+	sub.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	sub.add_theme_constant_override("separation", 16)
+	top.add_child(sub)
+	_clock_lbl = _chip("0'", 14, UI.RUNE)
+	_poss_lbl = _chip("• bola livre •", 13, UI.RUNE2)
+	sub.add_child(_clock_lbl)
+	sub.add_child(_poss_lbl)
+
+	# controle de velocidade (canto superior direito): Lento · Normal · Rápido
+	var speed := HBoxContainer.new()
+	layer.add_child(speed)
+	speed.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+	speed.offset_left = -260; speed.offset_top = 12; speed.offset_right = -12
+	speed.alignment = BoxContainer.ALIGNMENT_END
+	speed.add_theme_constant_override("separation", 6)
+	for item: Array in [["Lento", 0.5], ["Normal", 1.0], ["Rápido", 2.0]]:
+		var b := UI.gold_btn(item[0], 13)
+		b.pressed.connect(_set_speed.bind(item[1] as float, b))
+		speed.add_child(b)
+		_speed_btns.append(b)
+	_set_speed(1.0, _speed_btns[1])    # começa em Normal
+
 	_goal_lbl = _lbl(Vector2(430, 150), 60, Color(1, 0.85, 0.3))
 	_goal_lbl.text = "G O O O L !"; _goal_lbl.modulate = Color(1, 1, 1, 0)
 	layer.add_child(_goal_lbl)
+
+## Rótulo do time (brasão+nome) com leve contorno, pra ler sobre o gramado.
+func _tag(txt: String, sz: int, col: Color) -> Label:
+	var l := UI.lbl(txt, sz, col)
+	l.add_theme_color_override("font_outline_color", Color.BLACK)
+	l.add_theme_constant_override("outline_size", 4)
+	return l
+
+## Chip pequeno num painel discreto (relógio/posse).
+func _chip(txt: String, sz: int, col: Color) -> Label:
+	var l := UI.lbl(txt, sz, col)
+	l.add_theme_color_override("font_outline_color", Color.BLACK)
+	l.add_theme_constant_override("outline_size", 3)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	return l
+
+## Crachá do time: retrato (PNG) + nome embaixo. Fallback p/ emoji se faltar a arte.
+func _team_badge(img_path: String, team_name: String, emoji: String, col: Color) -> Control:
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 0)
+	var tex: Texture2D = load(img_path) if img_path != "" and ResourceLoader.exists(img_path) else null
+	if tex != null:
+		var tr := TextureRect.new()
+		tr.texture = tex
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.custom_minimum_size = Vector2(58, 64)
+		v.add_child(tr)
+	else:
+		v.add_child(_tag(emoji, 30, col))
+	var nm := _tag(team_name.to_upper(), 12, col)
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(nm)
+	return v
+
+## Placar central na placa ornamentada (score_plate). Fallback p/ painel chapado.
+func _score_plate() -> Control:
+	var holder := Control.new()
+	holder.custom_minimum_size = Vector2(196, 76)
+	var plate: Texture2D = load("res://assets/frames/score_plate.png") if ResourceLoader.exists("res://assets/frames/score_plate.png") else null
+	if plate != null:
+		var bg := TextureRect.new()
+		bg.texture = plate
+		bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		holder.add_child(bg)
+	else:
+		var pnl := UI.framed(UI.PANEL2, UI.GOLD)
+		pnl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		holder.add_child(pnl)
+	_score_lbl = _tag("0  —  0", 30, UI.GOLD2)
+	_score_lbl.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_score_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_score_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	holder.add_child(_score_lbl)
+	return holder
+
+## Velocidade do jogo. time_scale só muda QUANTOS passos de física rodam por segundo
+## (o passo segue 1/60 fixo) → 2x não tunela pela parede/gol. Reseta no _exit_tree.
+func _set_speed(scale: float, active: Button) -> void:
+	Engine.time_scale = scale
+	for b in _speed_btns:
+		b.modulate = Color(1, 1, 1, 1.0) if b == active else Color(1, 1, 1, 0.45)
+
+func _exit_tree() -> void:
+	Engine.time_scale = 1.0    # não deixa a velocidade vazar pros menus
 
 func _lbl(pos: Vector2, size: int, col: Color) -> Label:
 	var l := Label.new(); l.position = pos
@@ -588,5 +709,20 @@ func _popup_goal() -> void:
 	tw.chain().tween_property(_goal_lbl, "modulate:a", 0.0, 0.4)
 
 func _hud_update() -> void:
-	_score_lbl.text = "%d   %d" % [score["home"], score["away"]]
-	_clock_lbl.text = "%02d:%02d" % [int(clock) / 60, int(clock) % 60]
+	_score_lbl.text = "%d  —  %d" % [score["home"], score["away"]]
+	# relógio estilo transmissão: minutos decorridos (0'..90'), prorrogação na M.SÚBITA
+	if sudden_death:
+		_clock_lbl.text = "PRORROGAÇÃO"
+		_clock_lbl.add_theme_color_override("font_color", UI.GOLD2)
+	else:
+		_clock_lbl.text = "%d'" % clampi(int(MATCH_SECONDS - clock), 0, 99)
+	# indicador de posse: ponto colorido + nome do time com a bola
+	if poss == "home":
+		_poss_lbl.text = "● " + _home_name
+		_poss_lbl.add_theme_color_override("font_color", UI.HOME)
+	elif poss == "away":
+		_poss_lbl.text = _away_name + " ●"
+		_poss_lbl.add_theme_color_override("font_color", UI.AWAY)
+	else:
+		_poss_lbl.text = "• bola livre •"
+		_poss_lbl.add_theme_color_override("font_color", UI.RUNE2)

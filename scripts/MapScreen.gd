@@ -32,7 +32,9 @@ func _header() -> Control:
 	h.add_theme_constant_override("separation", 14)
 	pnl.add_child(h)
 	var bv := VBoxContainer.new()
-	bv.add_child(UI.clbl(GameState.beast.get("crest", "?"), 26, Color.WHITE))
+	var bcc := CenterContainer.new()
+	bcc.add_child(UI.icon(GameState.home_img(), Vector2(54, 62), GameState.beast.get("crest", "?")))
+	bv.add_child(bcc)
 	bv.add_child(UI.clbl(GameState.beast.get("name", ""), 12, UI.GOLD2))
 	h.add_child(bv)
 	var rv := VBoxContainer.new()
@@ -103,7 +105,10 @@ func _node_btn(c_idx: int, l_idx: int, node: Dictionary, reachable: Array) -> Co
 	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(UI.clbl(ICONS.get(tp, "?"), 30, Color.WHITE))
+	var ncc := CenterContainer.new()
+	ncc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ncc.add_child(UI.icon("res://assets/icons/node_%s.png" % tp, Vector2(46, 46), ICONS.get(tp, "?")))
+	v.add_child(ncc)
 	v.add_child(UI.clbl(tp.to_upper(), 9, UI.RUNE2))
 	var enemy: Dictionary = node.get("enemy", {})
 	if not enemy.is_empty():
