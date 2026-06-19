@@ -167,6 +167,7 @@ func _physics_process(delta: float) -> void:
 			_finish_by_target(_score != null and _score.total >= _target)
 
 	_update_possession(delta)
+	_combat_step(delta)           # porradaria: dano/nocaute (Doc 3 §6)
 	_anti_deadlock(delta)         # rede de segurança: bola presa em disputa > 3s
 	_gk_save()                    # goleiro defende (por lógica — a bola atravessa fisicamente)
 	_carry_ball()                 # cola a bola no pé do carregador (drible suave)
@@ -269,11 +270,33 @@ func _anti_deadlock(delta: float) -> void:
 		_stuck_t = 0.0
 		_stuck_ref = ball.global_position
 
+## Porradaria (Doc 3 §6): o marcador mais próximo do carregador pode dar uma porrada
+## (cooldown anti-abuso). Dano ∝ desarme; HP zera → nocaute (vítima sai ~6s). Porrada
+## e nocaute pontuam pro jogador (chips). Carregador nocauteado → solta a bola.
+func _combat_step(_delta: float) -> void:
+	if carrier == null or _in_flight or carrier.ko: return
+	var opp := _closest_opp_to(carrier)
+	if opp == null or opp.ko: return
+	if opp.global_position.distance_to(carrier.global_position) >= 30.0 or opp.hit_cd > 0.0:
+		return
+	var aggro: float = opp.stats.get("des", 1.0)
+	if randf() < 0.025 * clampf(aggro, 0.5, 1.6):
+		opp.hit_cd = 1.8                       # anti-abuso: porrada espaçada (§6.4)
+		_shake = maxf(_shake, 5.0)
+		if opp.team == "home" and _score: _score.action("porrada")
+		var victim := carrier
+		var knocked: bool = victim.take_damage(22.0 * clampf(aggro, 0.6, 1.5))
+		if knocked:
+			if opp.team == "home" and _score: _score.action("nocaute")
+			if carrier == victim:
+				carrier = null          # carregador nocauteado solta a bola (fica solta)
+
 ## Bola disputada: há jogadores dos DOIS times bem perto dela (scrum/cabo-de-guerra).
 func _ball_contested() -> bool:
 	var has_home := false
 	var has_away := false
 	for p in all:
+		if p.ko: continue
 		if p.global_position.distance_to(ball.global_position) < 46.0:
 			if p.team == "home": has_home = true
 			else: has_away = true
@@ -349,20 +372,21 @@ func _closest_any() -> Player:
 	var best: Player = null
 	var bd := 1e9
 	for p in all:
+		if p.ko: continue
 		var d := p.global_position.distance_to(ball.global_position)
 		if d < bd: bd = d; best = p
 	return best
 
 func _team_gk(team: String) -> Player:
 	for p in (home if team == "home" else away):
-		if p.role == "gk": return p
+		if p.role == "gk" and not p.ko: return p
 	return null
 
 func _closest_opp_to(me: Player) -> Player:
 	var best: Player = null
 	var bd := 1e9
 	for o in all:
-		if o.team == me.team: continue
+		if o.team == me.team or o.ko: continue
 		var d := o.global_position.distance_to(me.global_position)
 		if d < bd: bd = d; best = o
 	return best
@@ -438,7 +462,7 @@ func _best_pass(from: Player) -> Player:
 	var best: Player = null
 	var bs := -1e9
 	for p in all:
-		if p.team != from.team or p == from or p.role == "gk": continue
+		if p.team != from.team or p == from or p.role == "gk" or p.ko: continue
 		# prefere quem está mais à frente (perto do gol adversário) e aberto
 		var ahead := -p.global_position.distance_to(Vector2(gx, p.global_position.y))
 		var open := _nearest_opp_dist(p)
@@ -512,7 +536,7 @@ func _target_for(p: Player, presser: Player) -> Vector2:
 func _closest_to_ball(team: String) -> Player:
 	var best: Player = null; var bd := 1e9
 	for p in (home if team == "home" else away):
-		if p.role == "gk": continue
+		if p.role == "gk" or p.ko: continue
 		var d := p.global_position.distance_to(ball.global_position)
 		if d < bd: bd = d; best = p
 	return best

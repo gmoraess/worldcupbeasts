@@ -51,7 +51,8 @@ Troca de "1 fera = time" por **time de 5** de um **pool compartilhado de 15** (o
 - **§3 Pontuação** ✅ — `ScoreEngine.gd` (chips por ação: passe +1, lançamento +3, desarme +5, finalização +5, gol +30, super-gol +60); placar Balatro no HUD (total na placa com "número pulando", barra até o alvo, `chips×mult` da posse).
 - **§4 Jokers** ✅ — `Modifiers.gd` (data-driven gatilho×condição×efeito): Matador (+1 mult/gol), Fúria Ímpar (×3 em gol ímpar), Tiki-Taka (+50 se 4+ passes), Carrinho Elétrico, Violência Recompensada, Artilharia. Jogador começa com 1 joker.
 - **Alvos** por tier/ato (normal 170+, elite 240+, boss 320+), calibrados pro patamar real (~250–390 pts/90s). Headless: paridade ~87 pts entre capitãs, forte pontua ~50% mais que fraco.
-- **Falta no Doc 3:** §6 combate+HP, §5 cartas de partida, §6.3 relíquias por jogador, §7 fonte m6x11plus, jokers como recompensa na corrida.
+- **§6 Combate + HP** ✅ — cada jogador tem **HP individual** (barra verde→vermelho; resistência ≈ def+fôlego → 80–200). O marcador colado pode dar **porrada** (dano ∝ desarme, com **cooldown** anti-abuso §6.4); HP zera → **nocaute**: o jogador cai e sai ~6s (time com **um a menos**), volta com HP parcial. Porrada **+4** e nocaute **+10** chips pro time (vias de pontuar além do gol). Calibração com combate: forte pontua ~2,1× o fraco. Alvos recalibrados (normal 210+, elite 270+, boss 360+ por ato).
+- **Falta no Doc 3:** §5 cartas de partida (poções+auto-pause), §6.3 relíquias por jogador, §7 fonte m6x11plus, jokers como recompensa na corrida. *Watch: capitã defensiva (cuirass) pontua menos no Balatro — viável, mas é o "modo difícil".*
 
 ### Notas / pendências
 - **Polimento de Etapa 1 (feel):** movimento off-ball / steering pra criar linhas de passe e diminuir o aglomerado (a trava anti cabo-de-guerra resolve o teto, não a frequência). Melhor com playtest visual.

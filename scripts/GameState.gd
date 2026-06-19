@@ -266,9 +266,9 @@ func _make_enemy(tier: String, a: int, boss_id: String = "") -> Dictionary:
 ## patamar real (~250–390 pts/90s no ato 1); cresce com o ato (build do jogador).
 func _target_for(tier: String, a: int) -> int:
 	match tier:
-		"boss":  return 320 + a * 170           # A1 320 · A2 490 · A3 660
-		"elite": return 240 + a * 90            # A1 240 · A2 330 · A3 420
-		_:       return 170 + a * 60            # normal: A1 170 · A2 230 · A3 290
+		"boss":  return 360 + a * 170           # A1 360 · A2 530 · A3 700
+		"elite": return 270 + a * 90            # A1 270 · A2 360 · A3 450
+		_:       return 210 + a * 65            # normal: A1 210 · A2 275 · A3 340
 
 func _scaled(stats: Dictionary, f: float) -> Dictionary:
 	var out := {}
