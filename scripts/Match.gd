@@ -53,6 +53,19 @@ var _away_name := "FORA"
 var _home_crest := "🛡"
 var _away_crest := "🦁"
 
+# — FÚRIA & SUPERS (SPEC §5) —
+const FURY_GAIN := {"GOAL": 26.0, "DEFEND": 16.0, "STEAL": 18.0, "MISS": 8.0, "CONCEDE": 6.0}
+var _fury := {"home": 0.0, "away": 0.0}
+var _super_ready := {"home": false, "away": false}
+var _home_super := ""
+var _away_super := ""
+var _home_frase := ""
+var _away_frase := ""
+var _super_shot_live := ""      # lado cujo super-chute está viajando ("" se nenhum)
+var _fury_bar := {"home": null, "away": null}
+var _cutin_cd := 0.0            # cap de 1 cut-in a cada ~12s (SPEC §6.2)
+var _cutin_layer: CanvasLayer = null
+
 func goal_x(team: String) -> float:
 	# o gol que o time ATACA
 	return FIELD.end.x if team == "home" else FIELD.position.x
@@ -118,6 +131,7 @@ func _kickoff(team: String) -> void:
 	poss = team
 	_climax = false
 	_in_flight = false
+	_super_shot_live = ""
 	_steal_cd = 0.0
 	_stuck_t = 0.0
 	_stuck_ref = ball.global_position
@@ -131,6 +145,7 @@ func _physics_process(delta: float) -> void:
 	_goal_cd = maxf(0.0, _goal_cd - delta)
 	_shot_cd = maxf(0.0, _shot_cd - delta)
 	_pass_t = maxf(0.0, _pass_t - delta)
+	_cutin_cd = maxf(0.0, _cutin_cd - delta)
 	if _pass_t <= 0.0: _pass_to = null
 	if _goal_cd <= 0.0:
 		if not sudden_death:
@@ -162,6 +177,7 @@ func _update_possession(delta: float) -> void:
 	var spd := ball.speed()
 	if _in_flight and spd < 45.0:
 		_in_flight = false           # bola parou → vira bola solta (disputável)
+		_super_shot_live = ""
 	if _in_flight:
 		# recepção: alguém alcança a bola já desacelerada
 		if spd < 470.0:
@@ -178,6 +194,7 @@ func _update_possession(delta: float) -> void:
 		if dgk != null and dgk.global_position.distance_to(carrier.global_position) < 26.0:
 			if randf() < 0.40:
 				_set_carrier(dgk)
+				_add_fury(dgk.team, "STEAL")
 				_steal_cd = 0.6
 				return
 		# ROUBO deliberado: um adversário coladinho rola uma chance (não instantâneo)
@@ -188,6 +205,7 @@ func _update_possession(delta: float) -> void:
 			if randf() < 0.10 * clampf(des / maxf(0.4, ctrl), 0.4, 2.4):
 				_shake = maxf(_shake, 4.0)
 				_set_carrier(opp)
+				_add_fury(opp.team, "STEAL")
 				_steal_cd = 0.7
 
 func _set_carrier(p: Player) -> void:
@@ -270,11 +288,23 @@ func _gk_save() -> void:
 		if p.role != "gk": continue
 		if p.global_position.distance_to(ball.global_position) < 34.0:
 			_save_rolled = true
+			var def_side := p.team
+			var shooter := "away" if def_side == "home" else "home"
 			var dfn: float = p.stats.get("def", 1.0)
-			if randf() < 0.64 * clampf(dfn, 0.5, 1.4):
+			var chance := 0.64 * clampf(dfn, 0.5, 1.4)
+			if _super_shot_live == shooter: chance *= 0.15        # super-chute fura a defesa
+			var super_save: bool = _super_ready[def_side] and _super_kind(def_side) == "save"
+			if super_save: chance = 1.0                            # muralha: pega tudo
+			if randf() < chance:
 				ball.velocity *= 0.04
 				_set_carrier(p)
 				_shake = maxf(_shake, 6.0)
+				_add_fury(def_side, "DEFEND")
+				_add_fury(shooter, "MISS")
+				if super_save:
+					_super_ready[def_side] = false; _fury[def_side] = 0.0
+					_play_cutin(def_side)
+			_super_shot_live = ""
 			return
 
 func _closest_any() -> Player:
@@ -331,6 +361,10 @@ func _carrier_decide() -> void:
 
 	# CHUTE — arcade: finaliza sempre que chega perto (mesmo sob pressão)
 	if dist < 270.0:
+		# SUPER-CHUTE: fúria cheia + super do tipo "shot" → bomba + cut-in (SPEC §5/§6)
+		if _super_ready[carrier.team] and _super_kind(carrier.team) == "shot":
+			_fire_super_shot(carrier, carrier.team)
+			return
 		var fin: float = carrier.stats.get("fin", 1.0)
 		var noise := (1.6 - clampf(fin, 0.5, 1.5)) * 60.0
 		var aim := goal_c + Vector2(0, randf_range(-noise, noise))
@@ -457,6 +491,9 @@ func _check_goal() -> void:
 func _score_goal(team: String) -> void:
 	score[team] += 1
 	print("GOL %s! %d-%d (t=%.0f)" % [team, score["home"], score["away"], clock])
+	_add_fury(team, "GOAL")
+	_add_fury("away" if team == "home" else "home", "CONCEDE")
+	_super_shot_live = ""
 	_goal_cd = 2.2
 	_shake = 16.0
 	ball.ball_time_scale = 1.0
@@ -572,9 +609,14 @@ func _build_hud() -> void:
 	# nomes/brasões dos dois lados (fallback se a cena rodar fora de uma corrida)
 	_home_crest = GameState.beast.get("crest", "🛡")
 	_home_name = GameState.beast.get("nome", "CASA")
+	_home_super = GameState.beast.get("super", "")
+	_home_frase = GameState.beast.get("frase", "")
 	var enemy: Dictionary = GameState.current_node.get("enemy", {})
 	_away_crest = enemy.get("crest", "🦁")
 	_away_name = enemy.get("name", "FORA")
+	var leader: Dictionary = GameState.POOL.get(enemy.get("leader", ""), {})
+	_away_super = leader.get("super", "")
+	_away_frase = leader.get("frase", "")
 
 	var layer := CanvasLayer.new(); add_child(layer)
 
@@ -618,6 +660,10 @@ func _build_hud() -> void:
 		speed.add_child(b)
 		_speed_btns.append(b)
 	_set_speed(1.0, _speed_btns[1])    # começa em Normal
+
+	# barras de FÚRIA nos cantos inferiores (SPEC §7.1)
+	_fury_bar["home"] = _make_fury_bar(layer, true, UI.HOME, _home_name)
+	_fury_bar["away"] = _make_fury_bar(layer, false, UI.AWAY, _away_name)
 
 	_goal_lbl = _lbl(Vector2(430, 150), 60, Color(1, 0.85, 0.3))
 	_goal_lbl.text = "G O O O L !"; _goal_lbl.modulate = Color(1, 1, 1, 0)
@@ -691,6 +737,102 @@ func _set_speed(scale: float, active: Button) -> void:
 func _exit_tree() -> void:
 	Engine.time_scale = 1.0    # não deixa a velocidade vazar pros menus
 
+# ==========================================================================
+#  FÚRIA & SUPERS (SPEC §5/§6)
+# ==========================================================================
+func _make_fury_bar(layer: CanvasLayer, is_home: bool, col: Color, nm: String) -> ProgressBar:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	layer.add_child(box)
+	if is_home:
+		box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+		box.offset_left = 16; box.offset_top = -52; box.offset_bottom = -12
+	else:
+		box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+		box.offset_left = -236; box.offset_right = -16; box.offset_top = -52; box.offset_bottom = -12
+	box.add_child(_chip("FÚRIA · " + nm, 10, col))
+	var bar := ProgressBar.new()
+	bar.custom_minimum_size = Vector2(220, 14)
+	bar.min_value = 0; bar.max_value = 100; bar.value = 0
+	bar.show_percentage = false
+	bar.add_theme_stylebox_override("background", UI.sbf(UI.PANEL2, UI.BRONZE, 1, 6, 0, 0))
+	bar.add_theme_stylebox_override("fill", UI.sbf(col, col, 0, 6, 0, 0))
+	box.add_child(bar)
+	return bar
+
+## Soma fúria de um lado por evento (SPEC §5.1). Cheia → arma o super (não acumula).
+func _add_fury(side: String, kind: String) -> void:
+	if _super_ready[side]: return
+	_fury[side] = clampf(_fury[side] + FURY_GAIN.get(kind, 0.0), 0.0, 100.0)
+	if _fury[side] >= 100.0:
+		_super_ready[side] = true
+
+## Tipo do super do lado: "save" (muralha do goleiro) ou "shot" (os demais).
+func _super_kind(side: String) -> String:
+	var sid: String = _home_super if side == "home" else _away_super
+	return "save" if sid == "super_defesa_muralha" else "shot"
+
+## Dispara o super-chute: bomba mirada no canto + slow-mo forte + cut-in (SPEC §5.3).
+func _fire_super_shot(shooter: Player, side: String) -> void:
+	_super_ready[side] = false
+	_fury[side] = 0.0
+	_super_shot_live = side
+	var corner_y := GOAL_TOP + 20.0 if randf() < 0.5 else GOAL_BOT - 20.0
+	var aim := Vector2(goal_x(side), corner_y)
+	ball.kick(aim - shooter.global_position, 1320.0, randf_range(-0.7, 0.7), 0.0)
+	_in_flight = true; carrier = null; _save_rolled = false
+	_enter_super_climax()
+	_play_cutin(side)
+
+func _enter_super_climax() -> void:
+	_climax = true
+	ball.ball_time_scale = 0.22
+	var tw := create_tween()
+	tw.tween_property(cam, "zoom", Vector2(1.7, 1.7), 0.2).set_trans(Tween.TRANS_SINE)
+
+## Cut-in: retrato + nome + frase DESLIZA de um canto inferior (esquerda p/ super
+## do seu time, direita p/ inimigo), segura um instante e some. Cap de 1/12s.
+func _play_cutin(side: String) -> void:
+	if _cutin_cd > 0.0: return
+	_cutin_cd = 12.0
+	var nm: String = _home_name if side == "home" else _away_name
+	var frase: String = _home_frase if side == "home" else _away_frase
+	var img: String = GameState.home_img() if side == "home" else GameState.away_img()
+	var col: Color = UI.HOME if side == "home" else UI.AWAY
+	if _cutin_layer != null and is_instance_valid(_cutin_layer):
+		_cutin_layer.queue_free()
+	_cutin_layer = CanvasLayer.new(); _cutin_layer.layer = 50; add_child(_cutin_layer)
+
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", UI.sbf(UI.PANEL2, col, 3, 10, 12, 10))
+	var card_w := 330.0
+	var card_h := 118.0
+	card.custom_minimum_size = Vector2(card_w, card_h)
+	card.size = Vector2(card_w, card_h)
+	_cutin_layer.add_child(card)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 12)
+	card.add_child(h)
+	h.add_child(UI.icon(img, Vector2(82, card_h - 18), "🔥", col))
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_child(UI.lbl("⚡ SUPER!", 13, UI.GOLD2))
+	v.add_child(UI.lbl(nm.to_upper(), 22, col))
+	v.add_child(UI.lbl("« " + frase + " »", 12, UI.RUNE))
+	h.add_child(v)
+
+	# desliza do canto inferior (entra · segura · sai)
+	var vp := get_viewport_rect().size
+	var y := vp.y - card_h - 70.0                       # logo acima da barra de fúria
+	var target_x := 16.0 if side == "home" else vp.x - card_w - 16.0
+	var start_x := -card_w - 12.0 if side == "home" else vp.x + 12.0
+	card.position = Vector2(start_x, y)
+	var tw := create_tween()
+	tw.tween_property(card, "position:x", target_x, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(0.65)
+	tw.tween_property(card, "position:x", start_x, 0.2).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tw.tween_callback(_cutin_layer.queue_free)
+
 func _lbl(pos: Vector2, size: int, col: Color) -> Label:
 	var l := Label.new(); l.position = pos
 	l.add_theme_font_size_override("font_size", size)
@@ -728,3 +870,13 @@ func _hud_update() -> void:
 	else:
 		_poss_lbl.text = "• bola livre •"
 		_poss_lbl.add_theme_color_override("font_color", UI.RUNE2)
+	# barras de fúria (pulsam quando o super está armado)
+	for side in ["home", "away"]:
+		var bar: ProgressBar = _fury_bar[side]
+		if bar == null: continue
+		bar.value = _fury[side]
+		if _super_ready[side]:
+			var pulse := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.012)
+			bar.modulate = Color(1, 1, 1, pulse)
+		else:
+			bar.modulate = Color(1, 1, 1, 1)
