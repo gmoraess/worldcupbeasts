@@ -56,7 +56,8 @@ Troca de "1 fera = time" por **time de 5** de um **pool compartilhado de 15** (o
 - **FX de combate** ✅ — clarão branco no atingido + **estrela de impacto ("POW")** no ponto da pancada; **super-chute vira aríete** (adversário no caminho da bola perde HP/cai).
 - **Desvantagens por inimigo (blinds) + punição por sofrer gol** ✅ — cada inimigo impõe uma **regra** que dificulta pontuar (Neblina −15% chips, Teto de Vidro mult máx ×4, Muralha passes não pontuam, Anti-Artilheiro gols valem metade; bosses: Tempestade/Tirania mais pesadas), crescente normal→elite→boss. **Sofrer gol aumenta o alvo** (+25/+40/+60 por tier) com pulso vermelho — punição maior que o tempo de reposição. Aviso no HUD.
 - **Tela de Preparação (Doc 2 §4) + §6.3 relíquias por jogador + §2 sinergias** ✅ — `PrepScreen` antes de cada partida: trocar titulares por reservas (capitã fixa), **equipar gear por jogador** (Caneleira/Garras/Chuteira/Tornozeleira/Manopla → mods só daquela fera), e **sinergias** ativas (tags pedra/sangue/sombra/fogo entre os 5 → bônus de time). "Iniciar" pulável. Roteamento Mapa→Prep→Partida.
-- **Falta no Doc 3:** §7 fonte m6x11plus, jokers como recompensa na corrida. *Watch: capitã defensiva (cuirass) pontua menos — "modo difícil"; punição de boss (+60/gol) pode estar dura.*
+- **§7 Fonte m6x11** ✅ — fonte pixel (Balatro) aplicada globalmente via Theme (`assets/ui_theme.tres` em `project.godot [gui]`), import pixel-perfeito (sem antialiasing/hinting/subpixel) + fallback do sistema p/ acentos PT.
+- **Falta no Doc 3:** jokers como recompensa na corrida (build Balatro crescendo). *Watch: capitã defensiva (cuirass) pontua menos — "modo difícil"; punição de boss (+60/gol) pode estar dura.*
 
 ### Notas / pendências
 - **Polimento de Etapa 1 (feel):** movimento off-ball / steering pra criar linhas de passe e diminuir o aglomerado (a trava anti cabo-de-guerra resolve o teto, não a frequência). Melhor com playtest visual.
