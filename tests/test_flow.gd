@@ -23,7 +23,7 @@ func _run() -> void:
 	await process_frame
 	await process_frame
 	var m = main.current
-	print("  Match instanciada: %s x %s" % [gs.beast.get("name"), gs.enemy_name()])
+	print("  Match instanciada: %s x %s" % [gs.beast.get("nome"), gs.enemy_name()])
 	m.clock = 5.0
 	var safety := 0
 	while is_instance_valid(m) and not m.over and safety < 30000:

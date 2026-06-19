@@ -17,9 +17,9 @@ func _initialize() -> void:
 	call_deferred("_run")
 
 func _run() -> void:
-	var ids: Array = GameState.BEASTS.keys()
-	print("=== PASSE DE BALANCEAMENTO — round-robin %dx ===" % K)
-	print("Feras: %s | tempo=%.0fs | partidas=%d\n" % [", ".join(ids), LEN, ids.size() * (ids.size() - 1) * K])
+	var ids: Array = GameState.HERO_IDS    # capitães (cada um lidera um squad de 5)
+	print("=== PASSE DE BALANCEAMENTO — round-robin %dx (squads de 5) ===" % K)
+	print("Capitãs: %s | tempo=%.0fs | partidas=%d\n" % [", ".join(ids), LEN, ids.size() * (ids.size() - 1) * K])
 
 	# acumuladores por fera
 	var W := {}; var D := {}; var L := {}; var GF := {}; var GA := {}
@@ -56,7 +56,7 @@ func _run() -> void:
 	for id in ids:
 		var played: int = W[id]+D[id]+L[id]
 		var wr := 100.0 * float(W[id]) / maxf(1.0, float(played))
-		var tag: String = GameState.BEASTS[id].get("type","-")
+		var tag: String = "cap " + GameState.POOL[id].get("papel", "-")
 		print("%-9s %5d %5d %5d  %5.1f%%  %4.2f  %4.2f  %s" % [
 			id, W[id], D[id], L[id], wr,
 			float(GF[id])/maxf(1.0,played), float(GA[id])/maxf(1.0,played), tag])
@@ -84,38 +84,31 @@ func _run() -> void:
 	quit()
 
 func _calibration() -> void:
-	print("\n--- CALIBRAÇÃO: stats importam (forte vs fraco, %dx) ---" % K)
-	var strong := {"fin": 1.35, "ctrl": 1.30, "des": 1.25, "def": 1.30, "spd": 1.25, "sta": 1.25}
-	var weak   := {"fin": 0.75, "ctrl": 0.75, "des": 0.80, "def": 0.75, "spd": 0.85, "sta": 0.85}
+	print("\n--- CALIBRAÇÃO: stats importam (squad forte vs fraco, %dx) ---" % K)
+	var strong := {"fin": 1.30, "ctrl": 1.30, "des": 1.25, "def": 1.30, "spd": 1.25, "sta": 1.25}
+	var weak   := {"fin": 0.78, "ctrl": 0.78, "des": 0.80, "def": 0.78, "spd": 0.85, "sta": 0.85}
+	var strong5: Array = []; var weak5: Array = []
+	for i in 5: strong5.append(strong.duplicate()); weak5.append(weak.duplicate())
 	var sw := 0; var sg := 0; var wg := 0
 	for _k in K:
-		var r: Dictionary = await _play_stats(strong, weak)   # forte em casa
+		var r: Dictionary = await _play_squads(strong5, weak5)   # forte em casa
 		if r["h"] > r["a"]: sw += 1
 		sg += r["h"]; wg += r["a"]
 	for _k in K:
-		var r: Dictionary = await _play_stats(weak, strong)   # forte fora (mando invertido)
+		var r: Dictionary = await _play_squads(weak5, strong5)   # forte fora (mando invertido)
 		if r["a"] > r["h"]: sw += 1
 		sg += r["a"]; wg += r["h"]
 	var total := K * 2
 	print("forte venceu: %d/%d (%.0f%%)  — esperado: alto (>70%%)" % [sw, total, 100.0*sw/maxf(1.0,total)])
 	print("gols: forte %.2f/j  ×  fraco %.2f/j" % [float(sg)/total, float(wg)/total])
 
-func _play_stats(home_stats: Dictionary, away_stats: Dictionary) -> Dictionary:
+## Partida com squads de PERFIS (arrays de stat dicts) — usado pela calibração.
+func _play_squads(home_profiles: Array, away_profiles: Array) -> Dictionary:
 	var gs := root.get_node("GameState")
-	gs.start_run("cuirass")
-	gs.beast["stats"] = home_stats.duplicate()
-	gs.current_node = {"type": "partida", "enemy": {"name": "X", "stats": away_stats.duplicate()}}
-	var m = load("res://scenes/Match.tscn").instantiate()
-	root.add_child(m)
-	await process_frame
-	m.clock = LEN
-	var safety := 0
-	while not m.over and safety < 400000:
-		safety += 1
-		await process_frame
-	var r := {"h": m.score["home"], "a": m.score["away"]}
-	m.queue_free()
-	await process_frame
+	gs.home_squad_override = home_profiles
+	gs.relics = []
+	var r: Dictionary = await _run_match(away_profiles, {"leader": "X"})
+	gs.home_squad_override = []
 	return r
 
 func _winrate_spread(ids: Array, W: Dictionary, D: Dictionary, L: Dictionary) -> float:
@@ -126,10 +119,19 @@ func _winrate_spread(ids: Array, W: Dictionary, D: Dictionary, L: Dictionary) ->
 		hi = maxf(hi, wr); lo = minf(lo, wr)
 	return hi - lo
 
+## Partida entre o squad da capitã A (casa) e o squad da capitã B (fora).
 func _play(home_id: String, away_id: String) -> Dictionary:
 	var gs := root.get_node("GameState")
-	gs.start_run(home_id)   # home = perfil da fera (sem relíquias)
-	gs.current_node = {"type": "partida", "enemy": {"name": away_id, "stats": GameState.BEASTS[away_id]["stats"].duplicate()}}
+	gs.start_run(home_id)                                  # monta squad da casa (titulares)
+	var away_ids: Array = gs.build_default_squad(away_id)  # squad espelho da capitã B
+	return await _run_match(gs.squad_profiles(away_ids), {"leader": away_id})
+
+## Núcleo: roda uma partida com o away_squad dado; home usa GameState.titulares.
+func _run_match(away_squad: Array, enemy_extra: Dictionary = {}) -> Dictionary:
+	var gs := root.get_node("GameState")
+	var enemy := {"name": enemy_extra.get("leader", "X"), "squad": away_squad}
+	enemy.merge(enemy_extra, true)
+	gs.current_node = {"type": "partida", "enemy": enemy}
 	var m = load("res://scenes/Match.tscn").instantiate()
 	root.add_child(m)
 	await process_frame

@@ -13,18 +13,18 @@ func _ready() -> void:
 	var col := VBoxContainer.new()
 	col.add_theme_constant_override("separation", 16)
 	root.add_child(col)
-	col.add_child(UI.clbl("⚔ ESCOLHA SUA FERA", 30, UI.GOLD2))
-	col.add_child(UI.clbl("Cada fera é um perfil de stats que enviesa a física da partida.", 13, UI.RUNE2))
+	col.add_child(UI.clbl("⚔ ESCOLHA SUA CAPITÃ", 30, UI.GOLD2))
+	col.add_child(UI.clbl("A capitã lidera um time de 5 feras (montado do pool). Recrute o resto na corrida.", 13, UI.RUNE2))
 	var grid := GridContainer.new()
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 14)
 	grid.add_theme_constant_override("v_separation", 14)
 	col.add_child(grid)
-	for id in ["cuirass", "zab", "zak", "foot"]:
+	for id in GameState.HERO_IDS:
 		grid.add_child(_card(id))
 
 func _card(id: String) -> Control:
-	var data: Dictionary = GameState.BEASTS[id]
+	var data: Dictionary = GameState.POOL[id]
 	var st: Dictionary = data["stats"]
 	var btn := Button.new()
 	btn.custom_minimum_size = Vector2(520, 150)
@@ -46,10 +46,16 @@ func _card(id: String) -> Control:
 	var v := VBoxContainer.new()
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	v.add_child(UI.lbl(data["name"] + "  ·  " + data["type"], 18, UI.GOLD2))
+	v.add_child(UI.lbl(data["nome"] + "  ·  Capitã (" + data["papel"] + ")", 18, UI.GOLD2))
 	v.add_child(UI.lbl("🎯%.2f  ⚽%.2f  🦵%.2f  🛡%.2f  ⚡%.2f" % [st["fin"], st["ctrl"], st["des"], st["def"], st["spd"]], 12, UI.RUNE))
 	var lore := UI.lbl(data["lore"], 11, UI.RUNE2)
 	lore.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(lore)
+	# squad inicial (capitã + comuns que ela lidera)
+	var squad_ids: Array = GameState.build_default_squad(id)
+	var crests := ""
+	for sid in squad_ids:
+		crests += GameState.POOL[sid]["crest"] + " "
+	v.add_child(UI.lbl("Time: " + crests, 13, UI.RUNE2))
 	h.add_child(v)
 	return btn

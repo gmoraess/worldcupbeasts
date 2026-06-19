@@ -35,7 +35,7 @@ func _header() -> Control:
 	var bcc := CenterContainer.new()
 	bcc.add_child(UI.icon(GameState.home_img(), Vector2(54, 62), GameState.beast.get("crest", "?")))
 	bv.add_child(bcc)
-	bv.add_child(UI.clbl(GameState.beast.get("name", ""), 12, UI.GOLD2))
+	bv.add_child(UI.clbl(GameState.beast.get("nome", ""), 12, UI.GOLD2))
 	h.add_child(bv)
 	var rv := VBoxContainer.new()
 	rv.size_flags_horizontal = Control.SIZE_EXPAND_FILL

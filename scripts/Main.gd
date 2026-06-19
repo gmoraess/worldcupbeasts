@@ -49,8 +49,8 @@ func _show_match() -> void:
 func _on_match_over(home_won: bool) -> void:
 	var r: String = GameState.complete_node(home_won)
 	match r:
-		"victory": _msg("🏆 CAMPEÃO!", "%s conquistou a Copa dos Mil Anos!" % GameState.beast.get("name", ""), _show_beast_select, true)
-		"defeat": _msg("💀 DERROTA", "%s caiu. Fim da jornada." % GameState.beast.get("name", ""), _show_beast_select, false)
+		"victory": _msg("🏆 CAMPEÃO!", "%s conquistou a Copa dos Mil Anos!" % GameState.beast.get("nome", ""), _show_beast_select, true)
+		"defeat": _msg("💀 DERROTA", "%s caiu. Fim da jornada." % GameState.beast.get("nome", ""), _show_beast_select, false)
 		"repechage": _msg("❤️ REPESCAGEM", "Você perdeu, mas tinha uma vida extra. Segue na Copa!", _show_map, true)
 		"act_clear":
 			# boss vencido → recompensa de relíquia, depois anuncia o ato e segue

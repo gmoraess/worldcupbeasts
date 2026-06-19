@@ -88,8 +88,8 @@ func _build_team(team: String) -> void:
 	var arr: Array = home if team == "home" else away
 	var defend_x := own_goal_x(team)
 	var dir := 1.0 if team == "home" else -1.0   # sentido do ataque
-	# perfil de stats (fera do jogador / inimigo) — enviesa a física
-	var profile: Dictionary = GameState.home_stats() if team == "home" else GameState.away_stats()
+	# SQUAD de 5 feras (1 perfil por jogador) — cada um enviesa a física do seu papel
+	var squad: Array = GameState.home_squad() if team == "home" else GameState.away_squad()
 	var slots := [
 		["gk",  defend_x + 40.0 * dir, MID.y],
 		["def", defend_x + 230.0 * dir, MID.y - 110.0],
@@ -97,7 +97,9 @@ func _build_team(team: String) -> void:
 		["mid", MID.x - 110.0 * dir, MID.y],
 		["fwd", MID.x + 150.0 * dir, MID.y],
 	]
-	for s in slots:
+	for i in slots.size():
+		var s: Array = slots[i]
+		var profile: Dictionary = squad[i] if i < squad.size() else GameState.NEUTRAL
 		var p := Player.new()
 		p.team = team; p.role = s[0]
 		p.home_pos = Vector2(s[1], s[2])
@@ -569,7 +571,7 @@ func _goal(team: String) -> void:
 func _build_hud() -> void:
 	# nomes/brasões dos dois lados (fallback se a cena rodar fora de uma corrida)
 	_home_crest = GameState.beast.get("crest", "🛡")
-	_home_name = GameState.beast.get("name", "CASA")
+	_home_name = GameState.beast.get("nome", "CASA")
 	var enemy: Dictionary = GameState.current_node.get("enemy", {})
 	_away_crest = enemy.get("crest", "🦁")
 	_away_name = enemy.get("name", "FORA")

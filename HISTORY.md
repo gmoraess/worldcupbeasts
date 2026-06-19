@@ -42,5 +42,8 @@ Futebol N×N que **emerge da física + IA** (autobattler: você assiste, sem com
 - **Arte (PNGs temporários do projeto antigo `football-autobattler`)** ✅ — retratos das feras na **seleção** e no cabeçalho do **mapa**; **ícones de nó** desenhados no mapa; retratos casa×fora no placar. Helper `UI.icon()` (textura com fallback p/ emoji) + mapeamento de retratos no `GameState`. *Esses PNGs são paliativos — a arte definitiva virá depois.*
 - **Falta na Etapa 3:** fúria + supers + cut-ins (agora com retrato disponível), áudio (precisa de assets), e arte definitiva.
 
+### SPEC §1 — Squad de 5 feras (fundação) ✅
+Troca de "1 fera = time" por **time de 5** de um **pool compartilhado de 15** (os 15 retratos viram o pool). `GameState` reescrito: pool com papel/tags/super/frase/stats, **tiers** (comuns / elites / chefes por ato), **squad** (5 titulares + capitã + reservas), squads padrão **determinísticos e parelhos** por capitã. A partida agora dá **1 perfil por jogador** (cada um no campo é uma fera). Inimigos sacam do mesmo pool por tier (normal=comuns, elite=+elites, chefe=chefe+elite+comuns). Seleção escolhe a **capitã** (mostra o time); HUD/mapa usam retratos do pool. Validado headless (`test_balance` reescrito p/ squads): paridade ~10 pts entre capitãs, calibração 92% (squad forte vence), ~1 gol/lado.
+
 ### Notas / pendências
 - **Polimento de Etapa 1 (feel):** movimento off-ball / steering pra criar linhas de passe e diminuir o aglomerado (a trava anti cabo-de-guerra resolve o teto, não a frequência). Melhor com playtest visual.
