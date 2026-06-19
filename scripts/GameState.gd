@@ -128,6 +128,23 @@ const RELICS := {
 	"essencia_veloz":  {"name": "Essência Veloz", "ic": "💨", "desc": "++velocidade e controle, −fôlego", "mods": {"spd_mult": 0.18, "ctrl_mult": 0.08, "sta_mult": -0.08}},
 }
 
+# GEAR — relíquias EQUIPADAS num jogador (Doc 3 §6.3): mods só pra aquela fera.
+const GEAR := {
+	"caneleira":    {"nome": "Caneleira de Ferro", "ic": "🦿", "desc": "+resistência (def/fôlego)", "mods": {"def": 0.12, "sta": 0.12}},
+	"garras":       {"nome": "Garras Afiadas", "ic": "🐾", "desc": "+desarme/combate", "mods": {"des": 0.20}},
+	"chuteira":     {"nome": "Chuteira Leve", "ic": "👟", "desc": "+velocidade", "mods": {"spd": 0.16}},
+	"tornozeleira": {"nome": "Tornozeleira", "ic": "🎯", "desc": "+finalização", "mods": {"fin": 0.20}},
+	"manopla":      {"nome": "Manopla", "ic": "🥊", "desc": "+controle", "mods": {"ctrl": 0.16}},
+}
+
+# SINERGIAS (§2) — contam as tags entre os 5 titulares; limiar ativa mods de TIME.
+const SINERGIAS := {
+	"pedra":  {"nome": "Muralha", "2": {"def": 0.08}, "4": {"def": 0.16}},
+	"sangue": {"nome": "Matilha", "2": {"des": 0.12}},
+	"sombra": {"nome": "Sombra", "2": {"spd": 0.08}, "3": {"spd": 0.15}},
+	"fogo":   {"nome": "Brasa", "2": {"fin": 0.10}, "3": {"fin": 0.18}},
+}
+
 ## Preço da loja escala por ato (tensão econômica: ouro vale mais cedo).
 func shop_price() -> int:
 	return 25 + act * 10            # ato 1=25 · ato 2=35 · ato 3=45
@@ -142,6 +159,8 @@ var beast_id: String = ""          # == capita (compat. com telas antigas)
 var beast: Dictionary = {}         # == POOL[capita] (compat.)
 var relics: Array = []
 var jokers: Array = []             # Doc 3 §4 — ids de jokers (relíquias de pontuação)
+var gear_inv: Array = []           # gear no inventário (não equipado)
+var equipped: Array = []           # gear equipado por slot de titular (5; "" = vazio)
 var gold: int = 20
 var extra_life: bool = true
 var act: int = 0
@@ -158,6 +177,8 @@ func start_run(p_captain_id: String) -> void:
 	reservas = _pick_reserves(titulares, 2)
 	relics = []
 	jokers = ["matador"]            # joker inicial (Doc 3) — combos crescem na corrida
+	gear_inv = ["garras", "chuteira"]   # gear inicial pra equipar na PrepScreen
+	equipped = ["", "", "", "", ""]
 	gold = 20
 	extra_life = true
 	act = 0; col = -1; lane = 1
@@ -196,17 +217,75 @@ func _with_relics(base: Dictionary) -> Dictionary:
 
 var home_squad_override: Array = []   # seam de teste (vazio em produção)
 
-## Perfis dos 5 titulares do jogador (com relíquias), na ordem da FORMATION.
+## Perfis dos 5 titulares do jogador: stats base + relíquias globais + SINERGIAS
+## (time) + GEAR (por jogador). Ordem da FORMATION.
 func home_squad() -> Array:
 	if home_squad_override.size() == 5:
 		return home_squad_override
+	var syn: Dictionary = _synergy_mods()
 	var out: Array = []
-	for id in titulares:
-		var base: Dictionary = POOL.get(id, {}).get("stats", NEUTRAL)
-		out.append(_with_relics(base))
-	if out.size() < 5:
-		while out.size() < 5: out.append(NEUTRAL.duplicate())
+	for i in titulares.size():
+		var base: Dictionary = POOL.get(titulares[i], {}).get("stats", NEUTRAL)
+		var s: Dictionary = _with_relics(base)            # relíquias globais
+		for k in syn: s[k] = s.get(k, 1.0) + syn[k]       # sinergias (time)
+		if i < equipped.size() and equipped[i] != "":     # gear (por jogador)
+			var gm: Dictionary = GEAR[equipped[i]]["mods"]
+			for k in gm: s[k] = s.get(k, 1.0) + gm[k]
+		out.append(s)
+	while out.size() < 5: out.append(NEUTRAL.duplicate())
 	return out
+
+## Mods de sinergia agregados (conta tags entre os titulares, aplica limiares).
+func _synergy_mods() -> Dictionary:
+	var counts: Dictionary = _tag_counts()
+	var mods: Dictionary = {}
+	for tag in SINERGIAS:
+		var n: int = counts.get(tag, 0)
+		var best: Dictionary = {}
+		for thr in ["2", "3", "4", "5"]:
+			if SINERGIAS[tag].has(thr) and n >= int(thr):
+				best = SINERGIAS[tag][thr]
+		for k in best: mods[k] = mods.get(k, 0.0) + best[k]
+	return mods
+
+func _tag_counts() -> Dictionary:
+	var counts: Dictionary = {}
+	for id in titulares:
+		for t in POOL.get(id, {}).get("tags", []):
+			counts[t] = counts.get(t, 0) + 1
+	return counts
+
+## Sinergias ATIVAS (p/ a PrepScreen): [{tag, nome, n}] que bateram o limiar.
+func active_synergies() -> Array:
+	var counts: Dictionary = _tag_counts()
+	var out: Array = []
+	for tag in SINERGIAS:
+		var n: int = counts.get(tag, 0)
+		var hit := false
+		for thr in ["2", "3", "4", "5"]:
+			if SINERGIAS[tag].has(thr) and n >= int(thr): hit = true
+		if hit: out.append({"tag": tag, "nome": SINERGIAS[tag]["nome"], "n": n})
+	return out
+
+# — equipar/desequipar gear num slot de titular (PrepScreen §6.3) —
+func equip_gear(slot: int, gid: String) -> void:
+	if slot < 0 or slot >= 5 or not gear_inv.has(gid): return
+	if equipped[slot] != "": gear_inv.append(equipped[slot])   # devolve o atual
+	gear_inv.erase(gid)
+	equipped[slot] = gid
+
+func unequip_gear(slot: int) -> void:
+	if slot < 0 or slot >= 5 or equipped[slot] == "": return
+	gear_inv.append(equipped[slot])
+	equipped[slot] = ""
+
+## Troca o titular de um slot por uma reserva (capitã é fixa). Gear fica no slot.
+func swap_titular(slot: int, reserve_id: String) -> void:
+	if slot < 0 or slot >= 5 or titulares[slot] == capita or not reservas.has(reserve_id): return
+	var old: String = titulares[slot]
+	titulares[slot] = reserve_id
+	reservas.erase(reserve_id)
+	reservas.append(old)
 
 ## Perfis (stats puros, sem relíquias) de uma lista de ids — usado por testes/IA.
 func squad_profiles(ids: Array) -> Array:

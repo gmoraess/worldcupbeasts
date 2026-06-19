@@ -4,6 +4,7 @@ extends Control
 ## instanciada como filha e avisa o fim por sinal.
 const BeastSelect = preload("res://scripts/BeastSelect.gd")
 const MapScreen = preload("res://scripts/MapScreen.gd")
+const PrepScreen = preload("res://scripts/PrepScreen.gd")
 const RelicScreen = preload("res://scripts/RelicScreen.gd")
 const EventScreen = preload("res://scripts/EventScreen.gd")
 const ShopScreen = preload("res://scripts/ShopScreen.gd")
@@ -37,11 +38,14 @@ func _show_map() -> void:
 func _on_node(c: int, l: int) -> void:
 	var node: Dictionary = GameState.enter_node(c, l)
 	match node.get("type", ""):
-		"partida", "elite", "boss": _show_match()
+		"partida", "elite", "boss": _show_prep()
 		"bau": _show_relic(func(_id): _show_map())
 		"evento": _show_event()
 		"loja": _show_shop()
 		_: _show_map()
+
+func _show_prep() -> void:
+	_switch(PrepScreen.new(), {"prep_done": _show_match})
 
 func _show_match() -> void:
 	_switch(MatchScene.instantiate(), {"match_over": _on_match_over})
