@@ -17,6 +17,19 @@ var gols_marcados := 0           # p/ condição gol_impar
 var jokers: Array = []           # dicts §4 (gatilho/condicao/efeito)
 var _counters := {}              # p/ condições "cada_N"
 
+# desvantagem do inimigo (blind, Doc 3) — modificadores de pontuação
+var chips_mult := 1.0            # multiplica os chips pontuados na jogada
+var gol_mult := 1.0              # multiplica os chips de gol/super-gol
+var passe_chips := -1            # < 0 = usa o padrão; senão sobrescreve chips de passe
+var mult_max := 0.0              # 0 = sem teto; senão limita o mult
+
+## Aplica a desvantagem do nó (cfg do GameState.debuff_cfg()).
+func apply_debuff(cfg: Dictionary) -> void:
+	if cfg.has("chips_mult"): chips_mult = float(cfg["chips_mult"])
+	if cfg.has("gol_mult"): gol_mult = float(cfg["gol_mult"])
+	if cfg.has("passe_chips"): passe_chips = int(cfg["passe_chips"])
+	if cfg.has("mult_max"): mult_max = float(cfg["mult_max"])
+
 ## Início de uma posse do jogador (reseta chips/mult da "mão").
 func start_possession() -> void:
 	chips = 0
@@ -25,7 +38,12 @@ func start_possession() -> void:
 
 ## Registra uma ação de futebol/combate; soma chips e dispara jokers do gatilho.
 func action(kind: String) -> void:
-	chips += int(CHIPS.get(kind, 0))
+	var base: int = int(CHIPS.get(kind, 0))
+	if kind == "passe" and passe_chips >= 0:
+		base = passe_chips                       # debuff Muralha: passes não pontuam
+	if kind == "gol" or kind == "super_gol":
+		base = int(round(base * gol_mult))       # debuff Anti-Artilheiro: gol vale menos
+	chips += base
 	if kind == "passe" or kind == "lancamento":
 		passes_na_jogada += 1
 	if kind == "gol" or kind == "super_gol":
@@ -36,7 +54,9 @@ func action(kind: String) -> void:
 ## Retorna quanto pontuou (p/ a animação do HUD).
 func finalizar_jogada() -> int:
 	_fire("ao_finalizar_jogada", "")
-	var gained := int(round(float(chips) * mult))
+	var m := mult
+	if mult_max > 0.0: m = minf(m, mult_max)        # debuff Teto de Vidro
+	var gained := int(round(float(chips) * m * chips_mult))   # chips_mult: debuff Neblina/Tempestade
 	total += gained
 	start_possession()
 	return gained

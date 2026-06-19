@@ -100,6 +100,18 @@ const DEFAULT_SQUADS := {
 
 const NEUTRAL := {"fin": 1.0, "ctrl": 1.0, "des": 1.0, "def": 1.0, "spd": 1.0, "sta": 1.0}
 
+# DESVANTAGENS (blinds, Doc 3) — cada inimigo impõe uma regra que dificulta pontuar.
+# cfg lido pelo ScoreEngine: chips_mult · gol_mult · passe_chips · mult_max.
+const DEBUFFS := {
+	"neblina":         {"nome": "Neblina", "desc": "Chips −15%", "cfg": {"chips_mult": 0.85}},
+	"teto":            {"nome": "Teto de Vidro", "desc": "Mult máximo ×4", "cfg": {"mult_max": 4.0}},
+	"muralha":         {"nome": "Muralha", "desc": "Passes não pontuam", "cfg": {"passe_chips": 0}},
+	"anti_artilheiro": {"nome": "Anti-Artilheiro", "desc": "Gols valem metade", "cfg": {"gol_mult": 0.5}},
+	"tempestade":      {"nome": "Tempestade", "desc": "Chips −30% · mult máx ×4", "cfg": {"chips_mult": 0.70, "mult_max": 4.0}},
+	"tirania":         {"nome": "Tirania", "desc": "Gols valem 40% · chips −15%", "cfg": {"gol_mult": 0.4, "chips_mult": 0.85}},
+}
+const DEBUFF_POOL := {"normal": ["neblina", "teto"], "elite": ["muralha", "anti_artilheiro"], "boss": ["tempestade", "tirania"]}
+
 # relíquias — mexem em PARÂMETROS FÍSICOS (mods aplicados a TODO o time do jogador).
 const RELICS := {
 	"chuteira_rapida": {"name": "Chuteira Veloz", "ic": "⚡", "desc": "+velocidade do time", "mods": {"spd_mult": 0.12}},
@@ -232,6 +244,18 @@ const ModifiersLib = preload("res://scripts/data/Modifiers.gd")
 func player_jokers() -> Array:
 	return ModifiersLib.resolve(jokers)
 
+## Desvantagem (blind) do nó atual — cfg p/ o ScoreEngine + nome/desc p/ o HUD.
+func debuff() -> Dictionary:
+	var id: String = current_node.get("enemy", {}).get("debuff", "")
+	return DEBUFFS.get(id, {})
+
+func debuff_cfg() -> Dictionary:
+	return debuff().get("cfg", {})
+
+## Quanto o alvo SOBE a cada gol sofrido (punição > tempo de reposição).
+func concede_bump() -> int:
+	return current_node.get("enemy", {}).get("concede_bump", 0)
+
 # ==========================================================================
 #  GERAÇÃO DE SQUAD INIMIGO (saca do mesmo pool, escala por ato/tier)
 # ==========================================================================
@@ -259,8 +283,12 @@ func _make_enemy(tier: String, a: int, boss_id: String = "") -> Dictionary:
 			var fin: float = POOL[id]["stats"]["fin"]
 			if fin > best: best = fin; leader = id
 	var target := _target_for(tier, a)
+	var pool: Array = DEBUFF_POOL.get(tier, DEBUFF_POOL["normal"])
+	var debuff: String = pool[randi() % pool.size()]
+	var bump: int = {"normal": 25, "elite": 40, "boss": 60}.get(tier, 25)
 	return {"name": POOL[leader]["nome"], "crest": POOL[leader]["crest"], "leader": leader,
-		"stats": _scaled(POOL[leader]["stats"], f), "squad": squad, "target": target}
+		"stats": _scaled(POOL[leader]["stats"], f), "squad": squad, "target": target,
+		"debuff": debuff, "concede_bump": bump}
 
 ## Pontuação-alvo da blind (Doc 3 §3.3) — escala por tier e ato. Calibrada pro
 ## patamar real (~250–390 pts/90s no ato 1); cresce com o ato (build do jogador).

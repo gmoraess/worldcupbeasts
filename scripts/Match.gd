@@ -75,6 +75,8 @@ var _home_has_poss := false    # se a posse de pontuação atual é do jogador
 var _target_lbl: Label
 var _chips_lbl: Label
 var _prog: ProgressBar
+var _debuff_lbl: Label
+var _concede_bump := 0          # quanto o alvo sobe a cada gol sofrido (Doc 3)
 
 # — CARTAS DE PARTIDA (Doc 3 §5) —
 var _hand: Array = []          # ids das poções na mão
@@ -109,7 +111,9 @@ func _ready() -> void:
 
 	_score = ScoreEngineLib.new()
 	_score.jokers = GameState.player_jokers()
+	_score.apply_debuff(GameState.debuff_cfg())     # desvantagem do inimigo (blind)
 	_target = GameState.target()
+	_concede_bump = GameState.concede_bump()
 	_hand = MatchCardsLib.random_hand(3)
 
 	_build_hud()
@@ -606,6 +610,11 @@ func _score_goal(team: String) -> void:
 		_score.action("super_gol" if was_super else "gol")
 		_home_has_poss = false
 		_bank()
+	elif team == "away" and _concede_bump > 0:
+		# PUNIÇÃO por sofrer gol: o alvo SOBE (maior que o tempo de reposição). Doc 3.
+		_target += _concede_bump
+		if _prog != null: _prog.max_value = _target
+		_target_bump_fx()
 	print("GOL %s! pts=%d/%d (t=%.0f)" % [team, _score.total if _score else 0, _target, clock])
 	_add_fury(team, "GOAL")
 	_add_fury("away" if team == "home" else "home", "CONCEDE")
@@ -764,6 +773,12 @@ func _build_hud() -> void:
 	_target_lbl = _chip("ALVO  0 / %d" % _target, 11, UI.GOLD2)
 	_target_lbl.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	top.add_child(_target_lbl)
+	# desvantagem do inimigo (blind) — pra o jogador saber o que dificulta
+	var dbf: Dictionary = GameState.debuff()
+	if not dbf.is_empty():
+		_debuff_lbl = _chip("⚠ %s — %s  ·  sofrer gol: +%d alvo" % [dbf.get("nome", ""), dbf.get("desc", ""), _concede_bump], 11, Color("ff8a6b"))
+		_debuff_lbl.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		top.add_child(_debuff_lbl)
 
 	# linha de baixo: chips×mult da posse · relógio · posse
 	var sub := HBoxContainer.new()
@@ -1075,6 +1090,16 @@ func _lbl(pos: Vector2, size: int, col: Color) -> Label:
 	l.add_theme_color_override("font_outline_color", Color.BLACK)
 	l.add_theme_constant_override("outline_size", 5)
 	return l
+
+## Feedback de punição: o rótulo do alvo pulsa em vermelho quando sobe (sofreu gol).
+func _target_bump_fx() -> void:
+	if _target_lbl == null: return
+	_target_lbl.pivot_offset = _target_lbl.size / 2.0
+	_target_lbl.scale = Vector2(1.4, 1.4)
+	_target_lbl.add_theme_color_override("font_color", Color("ff5a4a"))
+	var tw := create_tween(); tw.set_parallel(true)
+	tw.tween_property(_target_lbl, "scale", Vector2(1, 1), 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_target_lbl, "theme_override_colors/font_color", UI.GOLD2, 0.6)
 
 ## "Número que pula" do Balatro: dá um tranco de escala no total ao pontuar.
 func _score_pop(_gained: int) -> void:
