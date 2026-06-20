@@ -126,6 +126,11 @@ const RELICS := {
 	"talisma_furia":   {"name": "Talismã da Fúria", "ic": "😤", "desc": "++chute e velocidade, −defesa", "mods": {"fin_mult": 0.22, "spd_mult": 0.08, "def_mult": -0.10}},
 	"couraca_antiga":  {"name": "Couraça Antiga", "ic": "🛡", "desc": "++defesa e controle, −velocidade", "mods": {"def_mult": 0.18, "ctrl_mult": 0.10, "spd_mult": -0.08}},
 	"essencia_veloz":  {"name": "Essência Veloz", "ic": "💨", "desc": "++velocidade e controle, −fôlego", "mods": {"spd_mult": 0.18, "ctrl_mult": 0.08, "sta_mult": -0.08}},
+	"estandarte":      {"name": "Estandarte Real", "ic": "🚩", "desc": "+controle e +finalização do time", "mods": {"ctrl_mult": 0.10, "fin_mult": 0.10}},
+	"tambor_guerra":   {"name": "Tambor de Guerra", "ic": "🥁", "desc": "+velocidade e +desarme do time", "mods": {"spd_mult": 0.10, "des_mult": 0.12}},
+	"armadura_real":   {"name": "Armadura Real", "ic": "🏰", "desc": "++defesa e fôlego, −velocidade", "mods": {"def_mult": 0.16, "sta_mult": 0.12, "spd_mult": -0.10}},
+	"relicario_fogo":  {"name": "Relicário de Fogo", "ic": "🌋", "desc": "++chute e velocidade, −controle", "mods": {"fin_mult": 0.18, "spd_mult": 0.10, "ctrl_mult": -0.08}},
+	"calice_vida":     {"name": "Cálice da Vida", "ic": "🏆", "desc": "+fôlego e +defesa (resistência)", "mods": {"sta_mult": 0.14, "def_mult": 0.10}},
 }
 
 # GEAR — relíquias EQUIPADAS num jogador (Doc 3 §6.3): mods só pra aquela fera.
@@ -135,6 +140,12 @@ const GEAR := {
 	"chuteira":     {"nome": "Chuteira Leve", "ic": "👟", "desc": "+velocidade", "mods": {"spd": 0.16}},
 	"tornozeleira": {"nome": "Tornozeleira", "ic": "🎯", "desc": "+finalização", "mods": {"fin": 0.20}},
 	"manopla":      {"nome": "Manopla", "ic": "🥊", "desc": "+controle", "mods": {"ctrl": 0.16}},
+	"peitoral":     {"nome": "Peitoral", "ic": "🛡", "desc": "++resistência, −velocidade", "mods": {"def": 0.18, "sta": 0.14, "spd": -0.08}},
+	"esporas":      {"nome": "Esporas", "ic": "⚙", "desc": "+velocidade e +finalização", "mods": {"spd": 0.12, "fin": 0.10}},
+	"luva_grude":   {"nome": "Luva Aderente", "ic": "🧤", "desc": "+controle e +defesa", "mods": {"ctrl": 0.12, "def": 0.12}},
+	"presa":        {"nome": "Presa de Aço", "ic": "🦷", "desc": "++desarme/combate, −controle", "mods": {"des": 0.24, "ctrl": -0.08}},
+	"talisma_gol":  {"nome": "Talismã do Gol", "ic": "🔱", "desc": "++finalização, −defesa", "mods": {"fin": 0.26, "def": -0.10}},
+	"botina_veloz": {"nome": "Botina Veloz", "ic": "🥾", "desc": "++velocidade, −fôlego", "mods": {"spd": 0.22, "sta": -0.08}},
 }
 
 # SINERGIAS (§2) — contam as tags entre os 5 titulares; limiar ativa mods de TIME.
@@ -144,6 +155,45 @@ const SINERGIAS := {
 	"sombra": {"nome": "Sombra", "2": {"spd": 0.08}, "3": {"spd": 0.15}},
 	"fogo":   {"nome": "Brasa", "2": {"fin": 0.10}, "3": {"fin": 0.18}},
 }
+
+# RARIDADE (figurinhas) — cinza/verde/azul/laranja/dourado.
+const RARITY := {
+	"comum":    {"nome": "Comum", "cor": Color("9aa0a6")},
+	"incomum":  {"nome": "Incomum", "cor": Color("5fc96b")},
+	"raro":     {"nome": "Raro", "cor": Color("4a90d9")},
+	"epico":    {"nome": "Épico", "cor": Color("e08a3a")},
+	"lendario": {"nome": "Lendário", "cor": Color("f3d24a")},
+}
+const RARIDADE := {
+	"urso": "comum", "rinoceronte": "comum", "arara": "comum",
+	"lobo": "incomum", "escorpiao": "incomum",
+	"elite_elefante": "raro", "elite_gorila": "raro", "elite_tigre": "raro",
+	"boss_mantis": "epico", "boss_leao": "epico", "boss_quetzal": "lendario",
+	"cuirass": "epico", "zab": "raro", "zak": "raro", "foot": "epico",
+}
+const RARITY_WEIGHT := {"comum": 45, "incomum": 28, "raro": 17, "epico": 8, "lendario": 2}
+
+func rarity(id: String) -> String:
+	return RARIDADE.get(id, "comum")
+func rarity_color(id: String) -> Color:
+	return RARITY[rarity(id)]["cor"]
+
+# PASSIVAS DE CAPITÃ — toda capitã mexe nos chips (joker embutido) + delta de cartas.
+const CAPTAIN_PASSIVE := {
+	"cuirass": {"nome": "Muralha Viva", "desc": "Desarme: +4 chips · +1 carta", "cartas": 1,
+		"joker": {"gatilho": "ao_desarmar", "condicao": "", "efeito": {"chips": 4}}},
+	"zab": {"nome": "Fome de Caça", "desc": "Cada finalização: +1 mult", "cartas": 0,
+		"joker": {"gatilho": "ao_finalizar", "condicao": "", "efeito": {"add_mult": 1.0}}},
+	"zak": {"nome": "Relâmpago", "desc": "Jogada com 3+ passes: +25 chips", "cartas": 0,
+		"joker": {"gatilho": "ao_finalizar_jogada", "condicao": "passes_na_jogada_>=3", "efeito": {"chips": 25}}},
+	"foot": {"nome": "Instinto Matador", "desc": "Gol: +2 mult (−1 carta)", "cartas": -1,
+		"joker": {"gatilho": "ao_marcar_gol", "condicao": "", "efeito": {"add_mult": 2.0}}},
+}
+func captain_passive() -> Dictionary:
+	return CAPTAIN_PASSIVE.get(capita, {})
+## Nº de cartas (poções) na partida: 2 padrão ± delta da capitã (mín. 1).
+func hand_size() -> int:
+	return maxi(1, 2 + int(captain_passive().get("cartas", 0)))
 
 ## Preço da loja escala por ato (tensão econômica: ouro vale mais cedo).
 func shop_price() -> int:
@@ -176,8 +226,8 @@ func start_run(p_captain_id: String) -> void:
 	titulares = build_default_squad(p_captain_id)
 	reservas = _pick_reserves(titulares, 2)
 	relics = []
-	jokers = ["matador"]            # joker inicial (Doc 3) — combos crescem na corrida
-	gear_inv = ["garras", "chuteira"]   # gear inicial pra equipar na PrepScreen
+	jokers = []                     # sem joker inicial — a passiva da capitã já mexe nos chips
+	gear_inv = []                   # sem gear inicial — ganha em packs/recompensas/loja
 	equipped = ["", "", "", "", ""]
 	gold = 20
 	extra_life = true
@@ -319,9 +369,42 @@ func target() -> int:
 
 const ModifiersLib = preload("res://scripts/data/Modifiers.gd")
 
-## Jokers do jogador resolvidos em dicts (p/ o ScoreEngine).
+## Jokers do jogador resolvidos em dicts (p/ o ScoreEngine) + a passiva da capitã.
 func player_jokers() -> Array:
-	return ModifiersLib.resolve(jokers)
+	var out: Array = ModifiersLib.resolve(jokers)
+	var p: Dictionary = captain_passive()
+	if p.has("joker"):
+		var j: Dictionary = (p["joker"] as Dictionary).duplicate(true)
+		j["id"] = "cap_" + capita
+		out.append(j)
+	return out
+
+# — PACOTE DE FIGURINHAS (Balatro) — sorteia feras por raridade pro elenco —
+## Abre um pacote: retorna n feras (não-heróis, ainda não no elenco) por peso de raridade.
+func open_pack(n: int = 3) -> Array:
+	var have: Array = titulares + reservas
+	var avail: Array = []
+	for id in POOL:
+		if not HERO_IDS.has(id) and not have.has(id): avail.append(id)
+	var picks: Array = []
+	for _i in n:
+		if avail.is_empty(): break
+		var id: String = _weighted_pick(avail)
+		picks.append(id); avail.erase(id)
+	return picks
+
+func _weighted_pick(ids: Array) -> String:
+	var total := 0
+	for id in ids: total += int(RARITY_WEIGHT.get(rarity(id), 10))
+	var r := randi() % maxi(1, total)
+	for id in ids:
+		r -= int(RARITY_WEIGHT.get(rarity(id), 10))
+		if r < 0: return id
+	return ids[0]
+
+## Recruta uma fera pro banco (vinda de pacote/loja).
+func recruit(id: String) -> void:
+	if not (titulares + reservas).has(id): reservas.append(id)
 
 ## Desvantagem (blind) do nó atual — cfg p/ o ScoreEngine + nome/desc p/ o HUD.
 func debuff() -> Dictionary:
@@ -477,6 +560,40 @@ func random_relic_choices(n: int = 3) -> Array:
 	var avail: Array = RELICS.keys().filter(func(r): return not relics.has(r))
 	avail.shuffle()
 	return avail.slice(0, mini(n, avail.size()))
+
+func add_joker(id: String) -> void:
+	if not jokers.has(id): jokers.append(id)
+
+## Recompensas/oferta MISTAS: relíquias globais + jokers ainda não possuídos.
+## Cada item: {"kind": "relic"|"joker", "id": ...}.
+func reward_choices(n: int = 3) -> Array:
+	var pool: Array = []
+	for r in RELICS:
+		if not relics.has(r): pool.append({"kind": "relic", "id": r})
+	for j in ModifiersLib.JOKERS:
+		if not jokers.has(j): pool.append({"kind": "joker", "id": j})
+	for g in GEAR:
+		if not gear_inv.has(g) and not equipped.has(g): pool.append({"kind": "gear", "id": g})
+	pool.shuffle()
+	return pool.slice(0, mini(n, pool.size()))
+
+## Dados de exibição de um item de recompensa (nome/ic/desc/kind).
+func reward_info(item: Dictionary) -> Dictionary:
+	var k: String = item.get("kind", "")
+	if k == "joker":
+		var j: Dictionary = ModifiersLib.JOKERS[item["id"]]
+		return {"nome": j["nome"], "ic": j["ic"], "desc": j["desc"], "kind": "joker"}
+	if k == "gear":
+		var g: Dictionary = GEAR[item["id"]]
+		return {"nome": g["nome"], "ic": g["ic"], "desc": g["desc"], "kind": "gear"}
+	var r: Dictionary = RELICS[item["id"]]
+	return {"nome": r["name"], "ic": r["ic"], "desc": r["desc"], "kind": "relic"}
+
+func take_reward(item: Dictionary) -> void:
+	var k: String = item.get("kind", "")
+	if k == "joker": add_joker(item["id"])
+	elif k == "gear": gear_inv.append(item["id"])
+	else: add_relic(item["id"])
 
 # ==========================================================================
 #  RECRUTAMENTO (loja/repescagem) — trocar reserva por fera nova do pool

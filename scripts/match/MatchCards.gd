@@ -15,6 +15,12 @@ const POOL := {
 		"desc": "Próxima finalização: +60% potência", "efeito": {"next_shot_pot": 1.6}},
 	"segundo_folego": {"nome": "Segundo Fôlego", "ic": "🔋", "tipo": "fisica", "alvo": "time",
 		"desc": "Recarrega a barra de fúria", "efeito": {"recarrega_furia": true}},
+	"chute_teleguiado": {"nome": "Chute Teleguiado", "ic": "🚀", "tipo": "fisica", "alvo": "time",
+		"desc": "Próxima finalização: +100% potência", "efeito": {"next_shot_pot": 2.0}},
+	"doping": {"nome": "Doping", "ic": "⚗", "tipo": "fisica", "alvo": "todos",
+		"desc": "+40% velocidade do time (8s)", "efeito": {"vel_burst": 1.4, "dur_s": 8.0}},
+	"tonico": {"nome": "Tônico", "ic": "🧉", "tipo": "fisica", "alvo": "jogador_alvo",
+		"desc": "Cura metade do HP de 1 jogador", "efeito": {"cura_hp": 90.0}},
 	# — de pontuação (Balatro) —
 	"catalisador": {"nome": "Catalisador", "ic": "🧪", "tipo": "pontuacao", "alvo": "pontuacao",
 		"desc": "+2 mult nesta posse", "efeito": {"add_mult": 2.0}},
@@ -22,6 +28,12 @@ const POOL := {
 		"desc": "×2 mult na posse atual", "efeito": {"x_mult": 2.0}},
 	"hora_do_show": {"nome": "Hora do Show", "ic": "✨", "tipo": "pontuacao", "alvo": "pontuacao",
 		"desc": "+40 chips na posse atual", "efeito": {"chips": 40}},
+	"festival": {"nome": "Festival", "ic": "🎆", "tipo": "pontuacao", "alvo": "pontuacao",
+		"desc": "×3 mult na posse atual", "efeito": {"x_mult": 3.0}},
+	"combo": {"nome": "Combo", "ic": "🔗", "tipo": "pontuacao", "alvo": "pontuacao",
+		"desc": "+1 mult e +25 chips na posse", "efeito": {"add_mult": 1.0, "chips": 25}},
+	"jackpot": {"nome": "Jackpot", "ic": "💰", "tipo": "pontuacao", "alvo": "pontuacao",
+		"desc": "+70 chips na posse atual", "efeito": {"chips": 70}},
 }
 
 ## Mão inicial: n cartas aleatórias do pool (MVP — depois vem da loja/corrida).

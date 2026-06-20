@@ -1,6 +1,7 @@
 extends Control
 ## Mapa roguelike — 3 atos, colunas e raias (estilo Slay the Spire).
 signal node_chosen(target_col: int, target_lane: int)
+signal organize_team
 
 const ICONS := {"partida": "⚽", "elite": "💀", "bau": "🎁", "evento": "❓", "loja": "🛒", "boss": "👑"}
 const NCOL := {"partida": Color("1e4a1e"), "elite": Color("4a1e1e"), "bau": Color("2a3a1a"),
@@ -25,6 +26,10 @@ func _ready() -> void:
 	var tip := "Clique num nó iluminado para avançar."
 	if GameState.col == -1: tip = "Escolha por onde entrar no ato."
 	col.add_child(UI.clbl(tip, 11, UI.RUNE2))
+	var org := UI.gold_btn("⚙ Organizar Time", 13)
+	org.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	org.pressed.connect(func(): organize_team.emit())
+	col.add_child(org)
 
 func _header() -> Control:
 	var pnl := UI.framed()

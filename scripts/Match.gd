@@ -114,7 +114,7 @@ func _ready() -> void:
 	_score.apply_debuff(GameState.debuff_cfg())     # desvantagem do inimigo (blind)
 	_target = GameState.target()
 	_concede_bump = GameState.concede_bump()
-	_hand = MatchCardsLib.random_hand(3)
+	_hand = MatchCardsLib.random_hand(GameState.hand_size())
 
 	_build_hud()
 	_build_hand()

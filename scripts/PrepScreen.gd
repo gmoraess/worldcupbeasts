@@ -4,6 +4,7 @@ extends Control
 ## "Iniciar" funciona com a escalação atual (pulável). A capitã é fixa.
 signal prep_done
 
+var standalone := false  # true = aberta pelo mapa (botão "Voltar"), não inicia partida
 var sel_slot := -1       # slot de titular selecionado
 var mode := ""           # "" | "swap" | "gear"
 
@@ -31,10 +32,11 @@ func _build() -> void:
 	var syn := UI.lbl("Sinergias: " + _synergy_text(), 13, UI.RUNE)
 	syn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(syn)
-	var go := UI.gold_btn("INICIAR PARTIDA →", 16)
+	var go := UI.gold_btn("← VOLTAR AO MAPA" if standalone else "INICIAR PARTIDA →", 16)
 	go.pressed.connect(func(): prep_done.emit())
 	top.add_child(go)
-	col.add_child(UI.clbl("vs %s  ·  alvo %d  ·  ⚠ %s" % [GameState.enemy_name(), GameState.target(), GameState.debuff().get("nome", "—")], 12, Color("ff8a6b")))
+	if not standalone:
+		col.add_child(UI.clbl("vs %s  ·  alvo %d  ·  ⚠ %s" % [GameState.enemy_name(), GameState.target(), GameState.debuff().get("nome", "—")], 12, Color("ff8a6b")))
 
 	# 5 titulares
 	for i in GameState.titulares.size():

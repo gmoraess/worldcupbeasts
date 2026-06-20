@@ -15,7 +15,10 @@ func _run() -> void:
 
 	var gs := root.get_node("GameState")
 	gs.start_run("foot")
-	main._on_beast()
+	main._on_beast()              # → BoosterScreen
+	await process_frame
+	print("  BoosterScreen: OK")
+	main.current.booster_done.emit()   # pula o pacote → mapa
 	await process_frame
 	print("  MapScreen: OK (ato %d, %d nós no ato)" % [gs.act, gs.map_data[gs.act].size()])
 

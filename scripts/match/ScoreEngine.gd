@@ -84,8 +84,9 @@ func _cond_ok(j: Dictionary, _kind: String) -> bool:
 	match c:
 		"": return true
 		"gol_impar": return (gols_marcados % 2) == 1
-		"passes_na_jogada_>=4": return passes_na_jogada >= 4
 		_:
+			if c.begins_with("passes_na_jogada_>="):
+				return passes_na_jogada >= int(c.substr(19))
 			if c.begins_with("cada_"):
 				var n := int(c.substr(5))
 				if n <= 0: return false

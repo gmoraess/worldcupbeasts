@@ -48,6 +48,11 @@ func _card(id: String) -> Control:
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(UI.lbl(data["nome"] + "  ·  Capitã (" + data["papel"] + ")", 18, UI.GOLD2))
 	v.add_child(UI.lbl("🎯%.2f  ⚽%.2f  🦵%.2f  🛡%.2f  ⚡%.2f" % [st["fin"], st["ctrl"], st["des"], st["def"], st["spd"]], 12, UI.RUNE))
+	# passiva da capitã (mexe nos chips) + nº de cartas
+	var pas: Dictionary = GameState.CAPTAIN_PASSIVE.get(id, {})
+	if not pas.is_empty():
+		v.add_child(UI.lbl("✨ %s — %s" % [pas["nome"], pas["desc"]], 12, UI.GOLD))
+	v.add_child(UI.lbl("🃏 %d cartas" % maxi(1, 2 + int(pas.get("cartas", 0))), 11, UI.RUNE2))
 	var lore := UI.lbl(data["lore"], 11, UI.RUNE2)
 	lore.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(lore)

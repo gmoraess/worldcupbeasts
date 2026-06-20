@@ -5,6 +5,7 @@ extends Control
 const BeastSelect = preload("res://scripts/BeastSelect.gd")
 const MapScreen = preload("res://scripts/MapScreen.gd")
 const PrepScreen = preload("res://scripts/PrepScreen.gd")
+const BoosterScreen = preload("res://scripts/BoosterScreen.gd")
 const RelicScreen = preload("res://scripts/RelicScreen.gd")
 const EventScreen = preload("res://scripts/EventScreen.gd")
 const ShopScreen = preload("res://scripts/ShopScreen.gd")
@@ -30,10 +31,18 @@ func _show_beast_select() -> void:
 	_switch(BeastSelect.new(), {"beast_selected": _on_beast})
 
 func _on_beast() -> void:
-	_show_map()
+	_show_booster()
+
+func _show_booster() -> void:
+	_switch(BoosterScreen.new(), {"booster_done": _show_map})
 
 func _show_map() -> void:
-	_switch(MapScreen.new(), {"node_chosen": _on_node})
+	_switch(MapScreen.new(), {"node_chosen": _on_node, "organize_team": _show_prep_standalone})
+
+func _show_prep_standalone() -> void:
+	var p := PrepScreen.new()
+	p.standalone = true
+	_switch(p, {"prep_done": _show_map})
 
 func _on_node(c: int, l: int) -> void:
 	var node: Dictionary = GameState.enter_node(c, l)
