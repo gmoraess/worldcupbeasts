@@ -22,10 +22,7 @@ func _run() -> void:
 	await process_frame
 	print("  MapScreen: OK (ato %d, %d nós no ato)" % [gs.act, gs.map_data[gs.act].size()])
 
-	main._on_node(0, 1)            # entra num nó de partida → PrepScreen
-	await process_frame
-	print("  PrepScreen: OK")
-	main.current.prep_done.emit() # inicia a partida
+	main._on_node(0, 1)            # entra num nó de partida → Match (sem prep)
 	await process_frame
 	await process_frame
 	var m = main.current

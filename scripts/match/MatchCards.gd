@@ -23,17 +23,17 @@ const POOL := {
 		"desc": "Cura metade do HP de 1 jogador", "efeito": {"cura_hp": 90.0}},
 	# — de pontuação (Balatro) —
 	"catalisador": {"nome": "Catalisador", "ic": "🧪", "tipo": "pontuacao", "alvo": "pontuacao",
-		"desc": "+2 mult nesta posse", "efeito": {"add_mult": 2.0}},
+		"desc": "Próxima jogada: +3 mult", "efeito": {"add_mult": 3.0}},
 	"banca_dobrada": {"nome": "Banca Dobrada", "ic": "🎰", "tipo": "pontuacao", "alvo": "pontuacao",
-		"desc": "×2 mult na posse atual", "efeito": {"x_mult": 2.0}},
+		"desc": "Próxima jogada: ×2 mult", "efeito": {"x_mult": 2.0}},
 	"hora_do_show": {"nome": "Hora do Show", "ic": "✨", "tipo": "pontuacao", "alvo": "pontuacao",
-		"desc": "+40 chips na posse atual", "efeito": {"chips": 40}},
+		"desc": "Próxima jogada: +60 chips", "efeito": {"chips": 60}},
 	"festival": {"nome": "Festival", "ic": "🎆", "tipo": "pontuacao", "alvo": "pontuacao",
-		"desc": "×3 mult na posse atual", "efeito": {"x_mult": 3.0}},
+		"desc": "Próxima jogada: ×3 mult", "efeito": {"x_mult": 3.0}},
 	"combo": {"nome": "Combo", "ic": "🔗", "tipo": "pontuacao", "alvo": "pontuacao",
-		"desc": "+1 mult e +25 chips na posse", "efeito": {"add_mult": 1.0, "chips": 25}},
+		"desc": "Próxima jogada: +2 mult e +40 chips", "efeito": {"add_mult": 2.0, "chips": 40}},
 	"jackpot": {"nome": "Jackpot", "ic": "💰", "tipo": "pontuacao", "alvo": "pontuacao",
-		"desc": "+70 chips na posse atual", "efeito": {"chips": 70}},
+		"desc": "Próxima jogada: +100 chips", "efeito": {"chips": 100}},
 }
 
 ## Mão inicial: n cartas aleatórias do pool (MVP — depois vem da loja/corrida).

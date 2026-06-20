@@ -23,6 +23,17 @@ var gol_mult := 1.0              # multiplica os chips de gol/super-gol
 var passe_chips := -1            # < 0 = usa o padrão; senão sobrescreve chips de passe
 var mult_max := 0.0              # 0 = sem teto; senão limita o mult
 
+# buffs de "próxima jogada" (cartas de pontuação) — aplicados no início da próxima posse
+var next_chips := 0
+var next_add_mult := 0.0
+var next_x_mult := 1.0
+
+## Agenda um bônus pra PRÓXIMA jogada (carta de pontuação §5, escopo proxima_jogada).
+func queue_next(e: Dictionary) -> void:
+	if e.has("chips"): next_chips += int(e["chips"])
+	if e.has("add_mult"): next_add_mult += float(e["add_mult"])
+	if e.has("x_mult"): next_x_mult *= float(e["x_mult"])
+
 ## Aplica a desvantagem do nó (cfg do GameState.debuff_cfg()).
 func apply_debuff(cfg: Dictionary) -> void:
 	if cfg.has("chips_mult"): chips_mult = float(cfg["chips_mult"])
@@ -30,11 +41,12 @@ func apply_debuff(cfg: Dictionary) -> void:
 	if cfg.has("passe_chips"): passe_chips = int(cfg["passe_chips"])
 	if cfg.has("mult_max"): mult_max = float(cfg["mult_max"])
 
-## Início de uma posse do jogador (reseta chips/mult da "mão").
+## Início de uma posse do jogador (reseta chips/mult; aplica bônus agendado).
 func start_possession() -> void:
-	chips = 0
-	mult = 1.0
+	chips = next_chips
+	mult = (1.0 + next_add_mult) * next_x_mult
 	passes_na_jogada = 0
+	next_chips = 0; next_add_mult = 0.0; next_x_mult = 1.0
 
 ## Registra uma ação de futebol/combate; soma chips e dispara jokers do gatilho.
 func action(kind: String) -> void:

@@ -67,13 +67,13 @@ func _act_map() -> Control:
 	row.add_theme_constant_override("separation", 10)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	var labels := ["ENTRADA", "CAMINHO", "PRÉ-CHEFE", "CHEFE"]
+	var labels := ["ENTRADA", "·", "·", "🎁 TESOURO", "·", "PRÉ-CHEFE", "CHEFE"]
 	for c_idx in act_data.size():
 		var cv := VBoxContainer.new()
 		cv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		cv.alignment = BoxContainer.ALIGNMENT_CENTER
-		cv.add_theme_constant_override("separation", 10)
-		cv.add_child(UI.clbl(labels[mini(c_idx, 3)], 9, UI.RUNE2))
+		cv.add_theme_constant_override("separation", 8)
+		cv.add_child(UI.clbl(labels[mini(c_idx, labels.size() - 1)], 9, UI.RUNE2))
 		var nodes: Array = act_data[c_idx]
 		if nodes.size() == 1:
 			var sp := Control.new(); sp.custom_minimum_size = Vector2(0, 70); cv.add_child(sp)

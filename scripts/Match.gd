@@ -1074,9 +1074,7 @@ func _apply_card(card: Dictionary, who: Player) -> void:
 			if e.has("recarrega_furia"): _fury["home"] = 100.0; _super_ready["home"] = true
 		"pontuacao":
 			if _score != null:
-				if e.has("chips"): _score.chips += int(e["chips"])
-				if e.has("add_mult"): _score.mult += float(e["add_mult"])
-				if e.has("x_mult"): _score.mult *= float(e["x_mult"])
+				_score.queue_next(e)   # buff na PRÓXIMA jogada (sem depender do timing)
 
 func _apply_physical(e: Dictionary, players: Array) -> void:
 	for p in players:

@@ -482,22 +482,30 @@ func _img(id: String) -> String:
 #  MAPA (3 atos × colunas × raias)
 # ==========================================================================
 func generate_map() -> void:
+	# 7 colunas por ato (mais amplo, estilo Slay the Spire). A coluna 3 é TODA de
+	# baús → todo caminho passa por 1 tesouro garantido. Movimento por raias vizinhas.
 	map_data = []
 	for a in 3:
-		var act_cols: Array = []
-		var c0: Array = []
-		for _l in 3:
-			c0.append(_mk_node("partida", a, false))
-		act_cols.append(c0)
-		var variants := [["partida", "evento", "loja"], ["evento", "partida", "partida"], ["loja", "partida", "evento"]]
-		var picked: Array = variants[randi() % variants.size()]
-		var c1: Array = []
-		for l in 3:
-			c1.append(_mk_node(picked[l], a, false))
-		act_cols.append(c1)
-		act_cols.append([_mk_node("elite", a, true), _mk_node("bau", a, false), _mk_node("elite", a, true)])
-		act_cols.append([_mk_boss(a)])
-		map_data.append(act_cols)
+		var cols: Array = []
+		cols.append(_mk_row(["partida", "partida", "partida"], a))        # 0 entrada
+		cols.append(_mk_row(_shuf(["partida", "evento", "loja"]), a))     # 1
+		cols.append(_mk_row(_shuf(["partida", "evento", "partida"]), a))  # 2
+		cols.append(_mk_row(["bau", "bau", "bau"], a))                    # 3 TESOURO garantido
+		cols.append(_mk_row(_shuf(["partida", "evento", "loja"]), a))     # 4
+		cols.append(_mk_row(["elite", "partida", "elite"], a))           # 5 pré-chefe
+		cols.append([_mk_boss(a)])                                       # 6 chefe
+		map_data.append(cols)
+
+func _mk_row(types: Array, a: int) -> Array:
+	var row: Array = []
+	for t in types:
+		row.append(_mk_node(t, a, t == "elite"))
+	return row
+
+func _shuf(arr: Array) -> Array:
+	var out: Array = arr.duplicate()
+	out.shuffle()
+	return out
 
 func _mk_node(tp: String, a: int, elite: bool) -> Dictionary:
 	var enemy: Dictionary = {}

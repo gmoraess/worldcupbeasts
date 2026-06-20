@@ -47,14 +47,11 @@ func _show_prep_standalone() -> void:
 func _on_node(c: int, l: int) -> void:
 	var node: Dictionary = GameState.enter_node(c, l)
 	match node.get("type", ""):
-		"partida", "elite", "boss": _show_prep()
+		"partida", "elite", "boss": _show_match()
 		"bau": _show_relic(func(_id): _show_map())
 		"evento": _show_event()
 		"loja": _show_shop()
 		_: _show_map()
-
-func _show_prep() -> void:
-	_switch(PrepScreen.new(), {"prep_done": _show_match})
 
 func _show_match() -> void:
 	_switch(MatchScene.instantiate(), {"match_over": _on_match_over})
