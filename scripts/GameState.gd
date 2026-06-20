@@ -180,12 +180,12 @@ func rarity_color(id: String) -> Color:
 
 # PASSIVAS DE CAPITÃ — toda capitã mexe nos chips (joker embutido) + delta de cartas.
 const CAPTAIN_PASSIVE := {
-	"cuirass": {"nome": "Muralha Viva", "desc": "Desarme: +4 chips · +1 carta", "cartas": 1,
-		"joker": {"gatilho": "ao_desarmar", "condicao": "", "efeito": {"chips": 4}}},
+	"cuirass": {"nome": "Muralha Viva", "desc": "Cada jogada fecha com +4 chips · +1 carta", "cartas": 1,
+		"joker": {"gatilho": "ao_finalizar_jogada", "condicao": "", "efeito": {"chips": 4}}},
 	"zab": {"nome": "Fome de Caça", "desc": "Cada finalização: +1 mult", "cartas": 0,
 		"joker": {"gatilho": "ao_finalizar", "condicao": "", "efeito": {"add_mult": 1.0}}},
-	"zak": {"nome": "Relâmpago", "desc": "Jogada com 3+ passes: +25 chips", "cartas": 0,
-		"joker": {"gatilho": "ao_finalizar_jogada", "condicao": "passes_na_jogada_>=3", "efeito": {"chips": 25}}},
+	"zak": {"nome": "Relâmpago", "desc": "Jogada com 4+ passes: +18 chips", "cartas": 0,
+		"joker": {"gatilho": "ao_finalizar_jogada", "condicao": "passes_na_jogada_>=4", "efeito": {"chips": 18}}},
 	"foot": {"nome": "Instinto Matador", "desc": "Gol: +2 mult (−1 carta)", "cartas": -1,
 		"joker": {"gatilho": "ao_marcar_gol", "condicao": "", "efeito": {"add_mult": 2.0}}},
 }

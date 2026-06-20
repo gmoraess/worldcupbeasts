@@ -59,7 +59,8 @@ Troca de "1 fera = time" por **time de 5** de um **pool compartilhado de 15** (o
 - **§7 Fonte m6x11** ✅ — fonte pixel (Balatro) aplicada globalmente via Theme (`assets/ui_theme.tres` em `project.godot [gui]`), import pixel-perfeito (sem antialiasing/hinting/subpixel) + fallback do sistema p/ acentos PT.
 - **Jokers/gear/relíquias como recompensa** ✅ — RelicScreen e loja agora oferecem 🛡 relíquia (time) · 🃏 joker (pontuação) · 🦿 equipamento (jogador), misturados. A build Balatro cresce na corrida.
 - **Início "tipo Balatro"** ✅ — **raridades** (comum-cinza/incomum-verde/raro-azul/épico-laranja/lendário-dourado); **pacote de figurinhas** no começo (3 pacotes → abre 1 → 3 feras por raridade → escolhe 1 pro elenco); **passivas de capitã** que mexem nos chips (Muralha Viva, Fome de Caça, Relâmpago, Instinto Matador) + **nº de cartas** por capitã (padrão 2; cuirass +1, foot −1 com passiva forte); **sem relíquias/gear iniciais** (ganha na corrida); **botão "Organizar Time"** no mapa; **+variedade** (+6 cartas, +6 equipamentos, +5 relíquias).
-- **Falta:** passe de **simulação quantitativa** do balanço das capitãs (com passivas). *Watch: cuirass pontua menos; punição de boss (+60/gol) pode estar dura.*
+- **Balanço das capitãs (simulação quantitativa)** ✅ — passe headless (K=10, 120 partidas) medindo pts/partida por capitã com as passivas. Após ajuste das passivas, **amplitude caiu de 649 → ~40 pts** (todas ~427–466), calibração forte ~2,4× fraco. Passivas finais: cuirass +4 chips/jogada (mói), zab +1 mult/finalização, zak +18 chips em jogada 4+ passes, foot +2 mult/gol (−1 carta).
+- **Doc 3: completo.** *Watch p/ playtest: punição de boss (+60/gol) pode estar dura; afinar valores no jogo real.*
 
 ### Notas / pendências
 - **Polimento de Etapa 1 (feel):** movimento off-ball / steering pra criar linhas de passe e diminuir o aglomerado (a trava anti cabo-de-guerra resolve o teto, não a frequência). Melhor com playtest visual.
