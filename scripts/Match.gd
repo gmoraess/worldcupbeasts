@@ -114,7 +114,8 @@ func _ready() -> void:
 	_score.apply_debuff(GameState.debuff_cfg())     # desvantagem do inimigo (blind)
 	_target = GameState.target()
 	_concede_bump = GameState.concede_bump()
-	_hand = MatchCardsLib.random_hand(GameState.hand_size())
+	# mão = consumíveis comprados na loja (até o nº de slots da capitã)
+	_hand = GameState.consumables.slice(0, GameState.hand_size())
 
 	_build_hud()
 	_build_hand()
@@ -1058,7 +1059,10 @@ func _pick_target(p: Player, idx: int) -> void:
 	get_tree().paused = false
 
 func _consume_card(idx: int) -> void:
-	if idx < _hand.size(): _hand.remove_at(idx)
+	if idx < _hand.size():
+		# consumo permanente: gasta a cópia comprada no inventário da corrida
+		GameState.consumables.erase(_hand[idx])
+		_hand.remove_at(idx)
 	_refresh_hand()
 
 ## Aplica o efeito da carta (físico no jogador/time, ou de pontuação Balatro).

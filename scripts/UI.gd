@@ -52,6 +52,18 @@ static func gold_btn(txt: String, fsize: int = 15) -> Button:
 	b.add_theme_stylebox_override("disabled", sbf(Color("4a3a20"), Color("3c2b12"), 1, 9, 14, 10))
 	return b
 
+## Pílula de Tier (I..V) colorida pela cor do tier (paleta de raridade).
+## Ex.: "TIER III" em azul. Usada na loja e na preparação.
+static func tier_badge(tier: int, label_prefix: String = "TIER ") -> Control:
+	var t := clampi(tier, 1, 5)
+	var c: Color = GameState.tier_color(t)
+	var p := PanelContainer.new()
+	p.add_theme_stylebox_override("panel", sbf(c.darkened(0.55), c, 1, 7, 7, 2))
+	p.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var l := lbl(label_prefix + GameState.TIER_NAMES[t - 1], 10, c.lightened(0.4))
+	p.add_child(l)
+	return p
+
 static func bg_rect(col: Color = STONE) -> ColorRect:
 	var r := ColorRect.new()
 	r.color = col

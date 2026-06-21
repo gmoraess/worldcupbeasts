@@ -178,6 +178,47 @@ func rarity(id: String) -> String:
 func rarity_color(id: String) -> Color:
 	return RARITY[rarity(id)]["cor"]
 
+# ==========================================================================
+#  TIER DAS BESTAS (I→V) — sobe comprando cópias repetidas. Cumulativo:
+#  1/2/4/8/16 cópias = Tier I/II/III/IV/V. As cores reusam a paleta de
+#  raridade (cinza→verde→azul→laranja→dourado). +8% nos stats por tier.
+# ==========================================================================
+const TIER_COPIES := [1, 2, 4, 8, 16]                       # cópias p/ cada tier
+const TIER_NAMES := ["I", "II", "III", "IV", "V"]
+const TIER_RARITY := ["comum", "incomum", "raro", "epico", "lendario"]  # cor por tier
+const TIER_BONUS := 0.08                                    # mult de stats por tier
+const TIER_MAX := 5
+
+## Tier atual (1..5) derivado das cópias acumuladas da besta.
+func tier_of(id: String) -> int:
+	var c: int = int(copies.get(id, 1))
+	var t := 1
+	for i in TIER_COPIES.size():
+		if c >= TIER_COPIES[i]: t = i + 1
+	return t
+
+## Cor do tier (paleta de raridade). t = 1..5.
+func tier_color(t: int) -> Color:
+	return RARITY[TIER_RARITY[clampi(t - 1, 0, TIER_MAX - 1)]]["cor"]
+
+## Multiplicador de stats do tier da besta (Tier I = 1.0).
+func tier_mult(id: String) -> float:
+	return 1.0 + (tier_of(id) - 1) * TIER_BONUS
+
+## Cópias restantes p/ o próximo tier (0 = já no máximo).
+func copies_to_next(id: String) -> int:
+	var t: int = tier_of(id)
+	if t >= TIER_MAX: return 0
+	return TIER_COPIES[t] - int(copies.get(id, 1))
+
+## Adiciona 1 cópia (compra/pacote); garante a besta no elenco se for nova.
+func add_copy(id: String) -> void:
+	if not copies.has(id):
+		copies[id] = 1
+		add_reserve(id)
+	else:
+		copies[id] = int(copies[id]) + 1
+
 # PASSIVAS DE CAPITÃ — toda capitã mexe nos chips (joker embutido) + delta de cartas.
 const CAPTAIN_PASSIVE := {
 	"cuirass": {"nome": "Muralha Viva", "desc": "Cada jogada fecha com +4 chips · +1 carta", "cartas": 1,
@@ -211,6 +252,8 @@ var relics: Array = []
 var jokers: Array = []             # Doc 3 §4 — ids de jokers (relíquias de pontuação)
 var gear_inv: Array = []           # gear no inventário (não equipado)
 var equipped: Array = []           # gear equipado por slot de titular (5; "" = vazio)
+var copies: Dictionary = {}        # id → nº de cópias possuídas (define o tier)
+var consumables: Array = []        # ids de consumíveis (MatchCards) comprados na loja
 var gold: int = 20
 var extra_life: bool = true
 var act: int = 0
@@ -224,11 +267,15 @@ func start_run(p_captain_id: String) -> void:
 	beast_id = p_captain_id
 	beast = POOL.get(p_captain_id, POOL["cuirass"])
 	titulares = build_default_squad(p_captain_id)
-	reservas = _pick_reserves(titulares, 2)
+	reservas = []                   # começa só com os 5 titulares; reservas vêm no jogo
 	relics = []
 	jokers = []                     # sem joker inicial — a passiva da capitã já mexe nos chips
 	gear_inv = []                   # sem gear inicial — ganha em packs/recompensas/loja
 	equipped = ["", "", "", "", ""]
+	consumables = []                # sem cartas iniciais — compradas na loja
+	copies = {}                     # 1 cópia (Tier I) por besta do elenco inicial
+	for id in (titulares + reservas):
+		copies[id] = 1
 	gold = 20
 	extra_life = true
 	act = 0; col = -1; lane = 1
@@ -275,7 +322,10 @@ func home_squad() -> Array:
 	var syn: Dictionary = _synergy_mods()
 	var out: Array = []
 	for i in titulares.size():
-		var base: Dictionary = POOL.get(titulares[i], {}).get("stats", NEUTRAL)
+		var raw: Dictionary = POOL.get(titulares[i], {}).get("stats", NEUTRAL)
+		var tm: float = tier_mult(titulares[i])           # tier da besta (+8%/tier)
+		var base: Dictionary = {}
+		for k in raw: base[k] = raw[k] * tm
 		var s: Dictionary = _with_relics(base)            # relíquias globais
 		for k in syn: s[k] = s.get(k, 1.0) + syn[k]       # sinergias (time)
 		if i < equipped.size() and equipped[i] != "":     # gear (por jogador)
@@ -368,6 +418,7 @@ func target() -> int:
 	return current_node.get("enemy", {}).get("target", 80)
 
 const ModifiersLib = preload("res://scripts/data/Modifiers.gd")
+const MatchCardsLib = preload("res://scripts/match/MatchCards.gd")
 
 ## Jokers do jogador resolvidos em dicts (p/ o ScoreEngine) + a passiva da capitã.
 func player_jokers() -> Array:
@@ -405,6 +456,7 @@ func _weighted_pick(ids: Array) -> String:
 ## Recruta uma fera pro banco (vinda de pacote/loja).
 func recruit(id: String) -> void:
 	if not (titulares + reservas).has(id): reservas.append(id)
+	if not copies.has(id): copies[id] = 1
 
 ## Desvantagem (blind) do nó atual — cfg p/ o ScoreEngine + nome/desc p/ o HUD.
 func debuff() -> Dictionary:
@@ -488,10 +540,10 @@ func generate_map() -> void:
 	for a in 3:
 		var cols: Array = []
 		cols.append(_mk_row(["partida", "partida", "partida"], a))        # 0 entrada
-		cols.append(_mk_row(_shuf(["partida", "evento", "loja"]), a))     # 1
+		cols.append(_mk_row(_shuf(["partida", "evento", "evento"]), a))   # 1 (loja agora é pós-partida)
 		cols.append(_mk_row(_shuf(["partida", "evento", "partida"]), a))  # 2
 		cols.append(_mk_row(["bau", "bau", "bau"], a))                    # 3 TESOURO garantido
-		cols.append(_mk_row(_shuf(["partida", "evento", "loja"]), a))     # 4
+		cols.append(_mk_row(_shuf(["partida", "evento", "partida"]), a))  # 4
 		cols.append(_mk_row(["elite", "partida", "elite"], a))           # 5 pré-chefe
 		cols.append([_mk_boss(a)])                                       # 6 chefe
 		map_data.append(cols)
@@ -618,3 +670,91 @@ func recruitable(n: int = 3) -> Array:
 func add_reserve(id: String) -> void:
 	if not titulares.has(id) and not reservas.has(id):
 		reservas.append(id)
+	if not copies.has(id): copies[id] = 1
+
+# ==========================================================================
+#  LOJA PÓS-PARTIDA (estilo Brotato) — ofertas + preços + compras.
+#  A ShopScreen guarda o ESTADO da visita (quais ofertas, reroll); aqui só
+#  os primitivos de dados. kind ∈ "figure" | "gear" | "pack" | "relic" | "cons".
+# ==========================================================================
+const FIGURE_BASE := {"comum": 6, "incomum": 9, "raro": 14, "epico": 20, "lendario": 30}
+
+## Preço de um item da loja (escala um pouco por ato).
+func shop_cost(kind: String, id: String = "") -> int:
+	match kind:
+		"figure": return int(FIGURE_BASE.get(rarity(id), 10)) + act * 2
+		"gear":   return 14 + act * 4
+		"pack":   return shop_price()                 # 25 / 35 / 45
+		"relic":  return shop_price()
+		"cons":   return 8 + act * 2
+	return shop_price()
+
+## 5 ofertas comuns rerolláveis: mistura figura/gear/pacote. Cada item:
+## {"kind", "id"} ("pack" sem id). Figuras podem ser bestas que você já tem
+## (para upar) ou novas (não-heroínas), sorteadas por peso de raridade.
+func shop_main_offers(n: int = 5) -> Array:
+	var figs: Array = _figure_pool()
+	var gears: Array = _gear_pool()
+	var out: Array = []
+	var guard := 0
+	while out.size() < n and guard < 200:
+		guard += 1
+		var roll := randi() % 10
+		if roll < 6 and not figs.is_empty():          # ~60% figura
+			var id: String = _weighted_pick(figs)
+			out.append({"kind": "figure", "id": id}); figs.erase(id)
+		elif roll < 9 and not gears.is_empty():        # ~30% gear
+			var gid: String = gears.pop_back()
+			out.append({"kind": "gear", "id": gid})
+		else:                                          # ~10% pacote
+			out.append({"kind": "pack", "id": ""})
+	return out
+
+## Candidatas a figura: bestas do elenco abaixo do tier máx (upar) + novas
+## não-heroínas do pool (recrutar). Sem duplicar ids.
+func _figure_pool() -> Array:
+	var out: Array = []
+	for id in (titulares + reservas):
+		if tier_of(id) < TIER_MAX and not out.has(id): out.append(id)
+	for id in POOL:
+		if not HERO_IDS.has(id) and not (titulares + reservas).has(id) and not out.has(id):
+			out.append(id)
+	return out
+
+func _gear_pool() -> Array:
+	var out: Array = []
+	for g in GEAR:
+		if not gear_inv.has(g) and not equipped.has(g): out.append(g)
+	out.shuffle()
+	return out
+
+## 3 relíquias (fixas, fora do reroll). Reaproveita o sorteio existente.
+func relic_offers(n: int = 3) -> Array:
+	return random_relic_choices(n)
+
+## 2 consumíveis (fixos, fora do reroll). Podem repetir entre visitas.
+func consumable_offers(n: int = 2) -> Array:
+	var ids: Array = MatchCardsLib.POOL.keys()
+	ids.shuffle()
+	return ids.slice(0, mini(n, ids.size()))
+
+func cons_info(id: String) -> Dictionary:
+	return MatchCardsLib.POOL.get(id, {})
+
+# — compras (assumem que o caller já checou o ouro) —
+func buy_figure(id: String) -> void:
+	gold -= shop_cost("figure", id); add_copy(id)
+
+func buy_gear(id: String) -> void:
+	gold -= shop_cost("gear"); gear_inv.append(id)
+
+## Abre um pacote pago: devolve 3 feras reveladas; a UI deixa o jogador ESCOLHER 1.
+func buy_pack() -> Array:
+	gold -= shop_cost("pack")
+	return open_pack(3)
+
+func buy_relic(id: String) -> void:
+	gold -= shop_cost("relic"); add_relic(id)
+
+func buy_consumable(id: String) -> void:
+	gold -= shop_cost("cons"); consumables.append(id)

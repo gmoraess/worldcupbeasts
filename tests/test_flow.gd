@@ -39,7 +39,22 @@ func _run() -> void:
 	print("  RelicScreen: OK")
 	main._show_event(); await process_frame
 	print("  EventScreen: OK")
-	main._show_shop(); await process_frame
+
+	# — TIER: comprar cópias sobe I→V nos limiares 1/2/4/8/16 —
+	var tid := "urso"
+	var t0: int = gs.tier_of(tid)
+	for _i in 15: gs.add_copy(tid)        # 1 → 16 cópias
+	print("  Tier de %s: %d → %d (esperado %d→5)" % [tid, t0, gs.tier_of(tid), t0])
+	assert(gs.tier_of(tid) == 5, "16 cópias deveriam dar Tier V")
+	assert(abs(gs.tier_mult(tid) - 1.32) < 0.001, "Tier V = +32%% (×1.32)")
+
+	# — LOJA: ofertas montam, consumível comprado entra no inventário —
+	print("  Ofertas: main=%d relic=%d cons=%d" % [gs.shop_main_offers(5).size(), gs.relic_offers(3).size(), gs.consumable_offers(2).size()])
+	gs.gold = 999
+	var cons_n: int = gs.consumables.size()
+	gs.buy_consumable("adrenalina")
+	assert(gs.consumables.size() == cons_n + 1, "consumível comprado deveria entrar no inventário")
+	main._show_shop(func(): pass); await process_frame
 	print("  ShopScreen: OK")
 	main._show_map(); await process_frame
 	print("  Voltou ao mapa: OK")

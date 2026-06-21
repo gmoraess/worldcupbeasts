@@ -50,7 +50,6 @@ func _on_node(c: int, l: int) -> void:
 		"partida", "elite", "boss": _show_match()
 		"bau": _show_relic(func(_id): _show_map())
 		"evento": _show_event()
-		"loja": _show_shop()
 		_: _show_map()
 
 func _show_match() -> void:
@@ -63,14 +62,15 @@ func _on_match_over(home_won: bool) -> void:
 		"defeat": _msg("💀 DERROTA", "%s caiu. Fim da jornada." % GameState.beast.get("nome", ""), _show_beast_select, false)
 		"repechage": _msg("❤️ REPESCAGEM", "Você perdeu, mas tinha uma vida extra. Segue na Copa!", _show_map, true)
 		"act_clear":
-			# boss vencido → recompensa de relíquia, depois anuncia o ato e segue
-			_show_relic(func(_id): _msg("👑 ATO %d / 3" % GameState.act, "Ato anterior conquistado! Avance.", _show_map, true))
+			# boss vencido → relíquia grátis → loja → anuncia o ato e segue
+			_show_relic(func(_id): _show_shop(func(): _msg("👑 ATO %d / 3" % GameState.act, "Ato anterior conquistado! Avance.", _show_map, true)))
 		"continue":
+			# toda vitória abre a LOJA antes do mapa; elite ainda dá relíquia grátis
 			var tp: String = GameState.current_node.get("type", "")
 			if home_won and tp in ["elite", "boss"]:
-				_show_relic(func(_id): _show_map())
+				_show_relic(func(_id): _show_shop(_show_map))
 			else:
-				_show_map()
+				_show_shop(_show_map)
 
 func _show_relic(after: Callable) -> void:
 	_switch(RelicScreen.new(), {"relic_chosen": after})
@@ -78,8 +78,8 @@ func _show_relic(after: Callable) -> void:
 func _show_event() -> void:
 	_switch(EventScreen.new(), {"event_done": func(): _show_map()})
 
-func _show_shop() -> void:
-	_switch(ShopScreen.new(), {"shop_done": func(): _show_map()})
+func _show_shop(after: Callable) -> void:
+	_switch(ShopScreen.new(), {"shop_done": after})
 
 # --- telas simples de mensagem/resultado ---
 func _msg(title: String, sub: String, cont: Callable, good: bool) -> void:

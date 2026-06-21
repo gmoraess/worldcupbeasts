@@ -3,11 +3,11 @@ extends Control
 signal node_chosen(target_col: int, target_lane: int)
 signal organize_team
 
-const ICONS := {"partida": "⚽", "elite": "💀", "bau": "🎁", "evento": "❓", "loja": "🛒", "boss": "👑"}
+const ICONS := {"partida": "⚽", "elite": "💀", "bau": "🎁", "evento": "❓", "boss": "👑"}
 const NCOL := {"partida": Color("1e4a1e"), "elite": Color("4a1e1e"), "bau": Color("2a3a1a"),
-	"evento": Color("1e2a4a"), "loja": Color("2a2a1e"), "boss": Color("3a1a0a")}
+	"evento": Color("1e2a4a"), "boss": Color("3a1a0a")}
 const NBORDER := {"partida": Color("3aa83a"), "elite": Color("c83a3a"), "bau": Color("8ac83a"),
-	"evento": Color("3a8ac8"), "loja": Color("c8c83a"), "boss": Color("d8b25a")}
+	"evento": Color("3a8ac8"), "boss": Color("d8b25a")}
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
