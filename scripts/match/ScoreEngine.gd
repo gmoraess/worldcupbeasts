@@ -62,16 +62,36 @@ func action(kind: String) -> void:
 		gols_marcados += 1
 	_fire(_trigger_for(kind), kind)
 
+## Mult efetivo da mão (com teto do debuff aplicado) — p/ Doc 4: o bônus de gol
+## usa o MESMO mult da mão chutada.
+func effective_mult() -> float:
+	var m := mult
+	if mult_max > 0.0: m = minf(m, mult_max)
+	return m
+
 ## Fecha a jogada: dispara jokers de fim, pontua chips×mult e zera a "mão".
 ## Retorna quanto pontuou (p/ a animação do HUD).
 func finalizar_jogada() -> int:
 	_fire("ao_finalizar_jogada", "")
-	var m := mult
-	if mult_max > 0.0: m = minf(m, mult_max)        # debuff Teto de Vidro
-	var gained := int(round(float(chips) * m * chips_mult))   # chips_mult: debuff Neblina/Tempestade
+	var gained := int(round(float(chips) * effective_mult() * chips_mult))   # chips_mult: debuff Neblina/Tempestade
 	total += gained
 	start_possession()
 	return gained
+
+## Doc 4 §2.3 — GOL adiciona um bônus POR CIMA da mão já bancada no chute,
+## usando o mult capturado no momento do chute. Retorna quanto somou.
+func add_goal_bonus(super_gol: bool, shot_mult: float) -> int:
+	var base: int = int(CHIPS.get("super_gol" if super_gol else "gol", 30))
+	var bonus := int(round(float(base) * gol_mult * shot_mult * chips_mult))
+	total += bonus
+	return bonus
+
+## Doc 4 §2.3 — BUST (perder a bola): zera a mão atual SEM pontuar. Não toca nos
+## bônus agendados (next_*), que valem pra próxima posse.
+func reset_hand() -> void:
+	chips = 0
+	mult = 1.0
+	passes_na_jogada = 0
 
 func _trigger_for(kind: String) -> String:
 	match kind:

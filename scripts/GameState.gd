@@ -415,7 +415,7 @@ func enemy_name() -> String:
 
 ## Pontuação-alvo do nó atual (Doc 3). Fallback p/ cena solta.
 func target() -> int:
-	return current_node.get("enemy", {}).get("target", 80)
+	return current_node.get("enemy", {}).get("target", 30)
 
 const ModifiersLib = preload("res://scripts/data/Modifiers.gd")
 const MatchCardsLib = preload("res://scripts/match/MatchCards.gd")
@@ -499,18 +499,20 @@ func _make_enemy(tier: String, a: int, boss_id: String = "") -> Dictionary:
 	var target := _target_for(tier, a)
 	var pool: Array = DEBUFF_POOL.get(tier, DEBUFF_POOL["normal"])
 	var debuff: String = pool[randi() % pool.size()]
-	var bump: int = {"normal": 25, "elite": 40, "boss": 60}.get(tier, 25)
+	var bump: int = {"normal": 6, "elite": 10, "boss": 16}.get(tier, 6)
 	return {"name": POOL[leader]["nome"], "crest": POOL[leader]["crest"], "leader": leader,
 		"stats": _scaled(POOL[leader]["stats"], f), "squad": squad, "target": target,
 		"debuff": debuff, "concede_bump": bump}
 
-## Pontuação-alvo da blind (Doc 3 §3.3) — escala por tier e ato. Calibrada pro
-## patamar real (~250–390 pts/90s no ato 1); cresce com o ato (build do jogador).
+## Pontuação-alvo da blind (Doc 3 §3.3 / Doc 4 §6) — escala por tier e ato.
+## Recalibrada pro modelo Doc 4 (banca só no chute, ~10 mãos): patamar ~20–40
+## pts/partida no sim Casual; o GOL (bônus ×mult) é o grande propulsor. PROVISÓRIO
+## — afinar com feel no modo Pro. cresce com o ato (build do jogador melhora).
 func _target_for(tier: String, a: int) -> int:
 	match tier:
-		"boss":  return 360 + a * 170           # A1 360 · A2 530 · A3 700
-		"elite": return 270 + a * 90            # A1 270 · A2 360 · A3 450
-		_:       return 210 + a * 65            # normal: A1 210 · A2 275 · A3 340
+		"boss":  return 70 + a * 28             # A1 70 · A2 98 · A3 126
+		"elite": return 45 + a * 16             # A1 45 · A2 61 · A3 77
+		_:       return 30 + a * 12             # normal: A1 30 · A2 42 · A3 54
 
 func _scaled(stats: Dictionary, f: float) -> Dictionary:
 	var out := {}

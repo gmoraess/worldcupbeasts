@@ -7,6 +7,7 @@ const Ball = preload("res://scripts/Ball.gd")
 const Player = preload("res://scripts/Player.gd")
 const ScoreEngineLib = preload("res://scripts/match/ScoreEngine.gd")
 const MatchCardsLib = preload("res://scripts/match/MatchCards.gd")
+const SkillShotLib = preload("res://scripts/match/SkillShot.gd")
 
 signal match_over(home_won: bool)   # avisa o roteador quando a partida termina
 
@@ -84,6 +85,27 @@ var _next_shot_pot := 1.0      # multiplicador da PRÓXIMA finalização (poçã
 var _hand_layer: CanvasLayer = null
 var _targeting := ""           # id da carta esperando escolha de jogador ("" = nenhuma)
 
+# --- DOC 4: o verbo (press-your-luck + chute de perícia) ---
+const HANDS_TOTAL := 10        # posses de ataque por partida (Doc 4 §6)
+const BASE_PRESSAO := 0.07     # pressão sobe por segundo (base)
+const K_PRESSAO := 0.20        # ganho extra por desarme do adversário
+const LIMIAR_BOTE := 0.45      # acima disso, botes do adversário escalam
+var pro_mode := true           # true = jogador decide quando chutar e mira (Doc 4 §3.2)
+var _pressao := 0.0            # 0..1, NÃO exibido como número (vinheta/pulso)
+var _hand_banked := false      # a mão atual já foi bancada (chute saiu)? evita bust duplo
+var _shot_mult := 1.0          # mult capturado no chute (p/ o bônus de gol por cima)
+var _shot_pending_super := false
+var _human_shot := false       # o chute em voo é de perícia do jogador (GK resolve por geometria)
+var _hands_left := HANDS_TOTAL
+var _aiming := false           # mira ativa (árvore pausada)
+var _bust_anim := false        # animação de "PERDEU!" rodando (não sobrescrever o medidor)
+var _skill: Node2D = null      # overlay do chute de perícia
+var _hand_meter: Label = null  # readout chips×mult perto da bola
+var _vignette: Control = null
+var _chutar_btn: Button = null
+var _auto_btn: Button = null
+var _hands_lbl: Label = null
+
 func goal_x(team: String) -> float:
 	# o gol que o time ATACA
 	return FIELD.end.x if team == "home" else FIELD.position.x
@@ -114,6 +136,9 @@ func _ready() -> void:
 	_score.apply_debuff(GameState.debuff_cfg())     # desvantagem do inimigo (blind)
 	_target = GameState.target()
 	_concede_bump = GameState.concede_bump()
+	_hands_left = HANDS_TOTAL
+	# Pro (jogador decide/mira) só com tela; headless/sim usa o piloto automático (Casual).
+	pro_mode = DisplayServer.get_name() != "headless"
 	# mão = consumíveis comprados na loja (até o nº de slots da capitã)
 	_hand = GameState.consumables.slice(0, GameState.hand_size())
 
@@ -181,6 +206,7 @@ func _physics_process(delta: float) -> void:
 			_finish_by_target(_score != null and _score.total >= _target)
 
 	_update_possession(delta)
+	_pressure_step(delta)         # Doc 4 §2.1: a marcação aperta enquanto você segura a bola
 	_combat_step(delta)           # porradaria: dano/nocaute (Doc 3 §6)
 	_super_shot_hits()            # super-chute atropela adversários no caminho
 	_anti_deadlock(delta)         # rede de segurança: bola presa em disputa > 3s
@@ -224,12 +250,14 @@ func _update_possession(delta: float) -> void:
 				if dgk.team == "home" and _score: _score.action("desarme")
 				_steal_cd = 0.6
 				return
-		# ROUBO deliberado: um adversário coladinho rola uma chance (não instantâneo)
+		# ROUBO deliberado: um adversário coladinho rola uma chance (não instantâneo).
+		# Doc 4: na posse do jogador, a PRESSÃO escala o roubo (cedo seguro, tarde perigoso).
 		var opp := _closest_opp_to(carrier)
 		if opp != null and opp.global_position.distance_to(carrier.global_position) < 28.0:
 			var des: float = opp.stats.get("des", 1.0)
 			var ctrl: float = carrier.stats.get("ctrl", 1.0)
-			if randf() < 0.10 * clampf(des / maxf(0.4, ctrl), 0.4, 2.4):
+			var press_mult := (0.5 + _pressao * 2.2) if carrier.team == "home" else 1.0
+			if randf() < 0.10 * clampf(des / maxf(0.4, ctrl), 0.4, 2.4) * press_mult:
 				_shake = maxf(_shake, 4.0)
 				_set_carrier(opp)
 				_add_fury(opp.team, "STEAL")
@@ -247,15 +275,21 @@ func _set_carrier(p: Player) -> void:
 # ==========================================================================
 #  PONTUAÇÃO BALATRO (Doc 3 §3) — posse do jogador = "mão"
 # ==========================================================================
-## Troca de dono da posse: começa a "mão" do jogador ou fecha (banca) ao perdê-la.
+## Doc 4 §2.3 — troca de dono da posse:
+##  • home ganha a bola → começa a "mão" (reseta pressão; chips/mult zerados).
+##  • home perde a bola SEM ter chutado → BUST: zera a mão (banca nada). Doi.
+##  • se já chutou (mão bancada no chute), a perda é só a resolução do lance.
 func _score_owner(side: String) -> void:
 	if _score == null: return
 	if side == "home" and not _home_has_poss:
 		_home_has_poss = true
+		_pressao = 0.0
+		_hand_banked = false
 		_score.start_possession()
 	elif side != "home" and _home_has_poss:
 		_home_has_poss = false
-		_bank()
+		if not _hand_banked:
+			_bust()
 
 ## Fecha a jogada do jogador: pontua chips×mult, anima e checa o alvo.
 func _bank() -> void:
@@ -268,6 +302,146 @@ func _check_target() -> void:
 	if over: return
 	if _score.total >= _target:
 		_finish_by_target(true)
+
+# ==========================================================================
+#  DOC 4 — O VERBO: chutar (banca) · bust (zera) · contagem de mãos
+# ==========================================================================
+## BUST: perdeu a bola sem chutar → a mão vira pó. Consome uma posse. Tem que doer.
+func _bust() -> void:
+	_score.reset_hand()
+	_bust_fx()
+	_spend_hand()
+
+## Chute do JOGADOR (Pro) ou do piloto (Casual): BANCA a mão inteira na hora.
+## A bola sai pra `aim` com `power01` (0..1). Gol depois soma bônus por cima.
+func _home_shoot(aim: Vector2, power01: float, is_super: bool, by_human: bool) -> void:
+	if carrier == null or carrier.team != "home": return
+	var shooter := carrier
+	if _score: _score.action("finalizacao")         # o chute em si conta chips + jokers (matador)
+	_shot_mult = _score.effective_mult()
+	var gained: int = _score.finalizar_jogada()    # banca chips×mult AGORA (deu gol ou não)
+	if gained > 0: _score_pop(gained)
+	_hand_banked = true
+	_shot_pending_super = is_super
+	_human_shot = by_human and not is_super     # super usa o caminho perfurante/cinemático
+	_spend_hand()
+	if is_super:
+		_fire_super_shot(shooter, "home")          # bomba + cut-in (usa o caminho do super)
+		return
+	var fin: float = shooter.stats.get("fin", 1.0)
+	var pot := lerpf(620.0, 1180.0, clampf(power01, 0.0, 1.0)) + fin * 120.0
+	pot *= _next_shot_pot; _next_shot_pot = 1.0     # poção Mira Certeira
+	# finalização alta = menos ruído na direção (mira mais fiel ao que pediu)
+	var noise := (1.5 - clampf(fin, 0.5, 1.5)) * (10.0 if by_human else 48.0)
+	var tgt := aim + Vector2(0, randf_range(-noise, noise))
+	ball.kick(tgt - shooter.global_position, pot, randf_range(-0.6, 0.6) * (1.3 - fin), 0.0)
+	_in_flight = true; carrier = null; _save_rolled = false
+	_enter_climax()
+
+## Gasta uma posse de ataque; acabando as mãos, encerra pela pontuação-alvo.
+func _spend_hand() -> void:
+	_hands_left = maxi(0, _hands_left - 1)
+	if _hands_left <= 0 and not over:
+		# deixa o lance em voo resolver (gol/defesa) antes de fechar
+		_finish_after_flight()
+
+func _finish_after_flight() -> void:
+	await get_tree().create_timer(2.4).timeout
+	if not over:
+		_finish_by_target(_score != null and _score.total >= _target)
+
+## Pede o chute de perícia: pausa, monta o overlay de mira com o tell do goleiro.
+func _begin_skillshot() -> void:
+	if _aiming or carrier == null or carrier.team != "home" or _in_flight: return
+	_aiming = true
+	var shooter := carrier
+	var is_super: bool = _super_ready["home"] and _super_kind("home") == "shot"
+	var gk := _team_gk("away")
+	var gx := goal_x("home")
+	# o goleiro "se compromete" com um lado (o tell que o jogador lê e evita)
+	var tell_y: float = (GOAL_TOP + GOAL_BOT) * 0.5
+	if gk != null:
+		var bias: float = signf(shooter.global_position.y - MID.y)   # tende ao lado do atacante
+		if bias == 0.0: bias = (1.0 if randf() < 0.5 else -1.0)
+		tell_y = clampf(MID.y + bias * randf_range(28.0, 62.0), GOAL_TOP + 14.0, GOAL_BOT - 14.0)
+		gk.set_meta("dive_y", tell_y)
+	var fin: float = shooter.stats.get("fin", 1.0)
+	var forgive := lerpf(6.0, 22.0, clampf((fin - 0.6) / 0.9, 0.0, 1.0))   # Doc 4 §3
+	_skill = SkillShotLib.new()
+	add_child(_skill)
+	_skill.setup(ball.global_position, gx, GOAL_TOP, GOAL_BOT,
+		Vector2(gx, tell_y), UI.AWAY, forgive, is_super)
+	_skill.aimed.connect(_on_skill_aimed)
+	get_tree().paused = true
+
+func _on_skill_aimed(aim_world: Vector2, power01: float) -> void:
+	get_tree().paused = false
+	if _skill != null:
+		_skill.queue_free(); _skill = null
+	_aiming = false
+	_home_shoot(aim_world, power01, _super_ready["home"] and _super_kind("home") == "shot", true)
+
+## Feedback de BUST (Doc 4 §5): a mão estilhaça/acinzenta — a lição "devia ter chutado".
+func _bust_fx() -> void:
+	_shake = maxf(_shake, 7.0)
+	if _hand_meter != null:
+		_bust_anim = true
+		_hand_meter.visible = true
+		_hand_meter.text = "PERDEU!"
+		_hand_meter.add_theme_color_override("font_color", Color("ff5a4a"))
+		_hand_meter.pivot_offset = _hand_meter.size / 2.0
+		var tw := create_tween()
+		tw.tween_property(_hand_meter, "scale", Vector2(1.5, 1.5), 0.12)
+		tw.tween_property(_hand_meter, "modulate:a", 0.0, 0.5)
+		tw.tween_callback(func(): _bust_anim = false; _hand_meter.visible = false)
+
+## Doc 4 §2.1 — a pressão sobe enquanto o jogador segura a bola (∝ desarme do
+## marcador mais próximo). NÃO é exibida como número; vira vinheta/pulso (§4.3).
+func _pressure_step(delta: float) -> void:
+	if not (_home_has_poss and carrier != null and carrier.team == "home" and not _in_flight):
+		return
+	var opp := _closest_opp_to(carrier)
+	var des: float = opp.stats.get("des", 1.0) if opp != null else 0.6
+	_pressao = minf(1.0, _pressao + delta * (BASE_PRESSAO + des * K_PRESSAO))
+
+## Vinheta radial (transparente no centro → vermelha nas bordas). Alpha = pressão.
+func _make_vignette() -> Control:
+	var grad := Gradient.new()
+	grad.set_color(0, Color(0.7, 0.0, 0.0, 0.0))
+	grad.set_color(1, Color(0.55, 0.0, 0.0, 0.9))
+	var gt := GradientTexture2D.new()
+	gt.gradient = grad
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.5)
+	gt.fill_to = Vector2(1.0, 0.5)
+	gt.width = 1280; gt.height = 720
+	var tr := TextureRect.new()
+	tr.texture = gt
+	tr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tr.modulate.a = 0.0
+	return tr
+
+## Pode chutar agora? (jogador com a bola, modo Pro, sem estar mirando/em voo)
+func _can_shoot() -> bool:
+	return pro_mode and not _aiming and not _in_flight and not over \
+		and carrier != null and carrier.team == "home"
+
+func _on_chutar_pressed() -> void:
+	if _can_shoot(): _begin_skillshot()
+
+func _toggle_auto() -> void:
+	pro_mode = not pro_mode
+	if _auto_btn != null:
+		_auto_btn.text = "Auto: " + ("OFF" if pro_mode else "ON")
+	if not pro_mode and _aiming and _skill != null:
+		# cancelou a mira ao virar Casual → resolve um chute rápido
+		_skill.quick_shot()
+
+func _unhandled_input(e: InputEvent) -> void:
+	if _aiming: return
+	if e is InputEventKey and e.pressed and not e.echo and e.keycode == KEY_SPACE:
+		if _can_shoot(): _begin_skillshot()
 
 ## Anti cabo-de-guerra: se a bola fica num raio pequeno por mais de 3s (disputa
 ## parada, ninguém progride), alguém "ganha o bate-pé" e ela escapa do amontoado.
@@ -391,6 +565,30 @@ func _escape_dir(p: Player) -> Vector2:
 ## chutes centrais são defendidos; chutes precisos/abertos passam.
 func _gk_save() -> void:
 	if not _in_flight or _save_rolled: return
+	# DOC 4 §3 — chute de perícia do jogador: o goleiro resolve por GEOMETRIA (sem %).
+	# Acertou longe do mergulho dele = passa; perto = defende. 'def' alarga o alcance.
+	if _human_shot:
+		var gk := _team_gk("away")
+		if gk == null:
+			_human_shot = false
+		elif ball.global_position.x > goal_x("home") - 70.0:
+			_save_rolled = true
+			_human_shot = false
+			var dive_y: float = float(gk.get_meta("dive_y", MID.y))
+			var dfn: float = gk.stats.get("def", 1.0)
+			var reach := lerpf(40.0, 92.0, clampf((dfn - 0.6) / 0.9, 0.0, 1.0))
+			var super_save: bool = _super_ready["away"] and _super_kind("away") == "save"
+			var saved: bool = super_save or absf(ball.global_position.y - dive_y) < reach
+			if saved:
+				ball.velocity *= 0.04
+				ball.global_position = Vector2(goal_x("home") - 30.0, ball.global_position.y)
+				_set_carrier(gk)
+				_shake = maxf(_shake, 6.0)
+				_add_fury("away", "DEFEND"); _add_fury("home", "MISS")
+				if super_save:
+					_super_ready["away"] = false; _fury["away"] = 0.0; _play_cutin("away")
+			_super_shot_live = ""
+		return                                   # viajando ou já resolvido: pula o save aleatório
 	for p in all:
 		if p.role != "gk": continue
 		if p.global_position.distance_to(ball.global_position) < 34.0:
@@ -467,21 +665,31 @@ func _carrier_decide() -> void:
 	var dist := carrier.global_position.distance_to(goal_c)
 	var pressure := _nearest_opp_dist(carrier)
 
-	# CHUTE — arcade: finaliza sempre que chega perto (mesmo sob pressão)
+	# CASUAL (piloto faz o press-your-luck): se a pressão apertou e a mão tem valor,
+	# BANCA agora em vez de arriscar o bust a zero (Doc 4 §3.2).
+	if carrier.team == "home" and not pro_mode and _pressao > LIMIAR_BOTE and _score != null and _score.chips >= 5:
+		var is_super_c: bool = _super_ready["home"] and _super_kind("home") == "shot"
+		_home_shoot(Vector2(goal_x("home"), MID.y + randf_range(-70.0, 70.0)), randf_range(0.5, 0.9), is_super_c, false)
+		return
+
+	# CHUTE (Doc 4 §2.2) — chegou perto do gol:
 	if dist < 270.0:
-		# SUPER-CHUTE: fúria cheia + super do tipo "shot" → bomba + cut-in (SPEC §5/§6)
-		if _super_ready[carrier.team] and _super_kind(carrier.team) == "shot":
-			_fire_super_shot(carrier, carrier.team)
+		if carrier.team == "home":
+			if pro_mode:
+				return                # Pro: o JOGADOR decide quando chutar; segura/dribla
+			# Casual/headless: o piloto banca a mão (mira assistida no gol)
+			var is_super_h: bool = _super_ready["home"] and _super_kind("home") == "shot"
+			var aim_y := goal_c.y + randf_range(-70.0, 70.0)
+			_home_shoot(Vector2(goal_x("home"), aim_y), randf_range(0.55, 0.95), is_super_h, false)
+			return
+		# AWAY: piloto automático (não pontua chips do jogador)
+		if _super_ready["away"] and _super_kind("away") == "shot":
+			_fire_super_shot(carrier, "away")
 			return
 		var fin: float = carrier.stats.get("fin", 1.0)
 		var noise := (1.6 - clampf(fin, 0.5, 1.5)) * 60.0
 		var aim := goal_c + Vector2(0, randf_range(-noise, noise))
-		var pot := 780.0 + fin * 220.0
-		if carrier.team == "home":
-			pot *= _next_shot_pot; _next_shot_pot = 1.0          # poção Mira Certeira
-		ball.kick(aim - carrier.global_position, pot, randf_range(-1.2, 1.2) * (1.4 - fin), 0.0)
-		if carrier.team == "home" and _score:
-			_score.action("finalizacao")
+		ball.kick(aim - carrier.global_position, 780.0 + fin * 220.0, randf_range(-1.2, 1.2) * (1.4 - fin), 0.0)
 		_in_flight = true; carrier = null; _save_rolled = false
 		_enter_climax()
 		return
@@ -544,6 +752,9 @@ func _target_for(p: Player, presser: Player) -> Vector2:
 
 	# GOLEIRO — fecha o ângulo, mas SAI POUCO da linha (não vira scrum)
 	if p.role == "gk":
+		# Doc 4: no chute de perícia, o GK adversário MERGULHA pro canto comprometido
+		if _human_shot and _in_flight and p.team == "away" and p.has_meta("dive_y"):
+			return Vector2(own_goal_x("away") - 18.0, float(p.get_meta("dive_y")))
 		var gc := Vector2(own_goal_x(p.team), MID.y)
 		var d := ball.global_position - gc
 		var pos := gc + d.normalized() * clampf(d.length() * 0.14, 16.0, 52.0)
@@ -608,9 +819,11 @@ func _score_goal(team: String) -> void:
 	# PONTUAÇÃO (Doc 3): gol do jogador pontua (super gol vale mais) e fecha a "mão"
 	var was_super := _super_shot_live == team
 	if team == "home" and _score != null:
-		_score.action("super_gol" if was_super else "gol")
+		# Doc 4 §2.3: a mão já foi bancada no chute; o GOL soma um BÔNUS por cima.
+		var bonus: int = _score.add_goal_bonus(was_super, _shot_mult)
+		_score_pop(bonus)
 		_home_has_poss = false
-		_bank()
+		_check_target()
 	elif team == "away" and _concede_bump > 0:
 		# PUNIÇÃO por sofrer gol: o alvo SOBE (maior que o tempo de reposição). Doc 3.
 		_target += _concede_bump
@@ -811,6 +1024,34 @@ func _build_hud() -> void:
 	_fury_bar["home"] = _make_fury_bar(layer, true, UI.HOME, _home_name)
 	_fury_bar["away"] = _make_fury_bar(layer, false, UI.AWAY, _away_name)
 
+	# DOC 4 §4.3 — VINHETA de pressão (qualitativa, sem número): avermelha as bordas.
+	_vignette = _make_vignette()
+	layer.add_child(_vignette)
+
+	# DOC 4 §4.1 — POSSES RESTANTES (mãos do blind) ao lado do relógio
+	_hands_lbl = _chip("⚽×%d" % _hands_left, 14, UI.GOLD2)
+	sub.add_child(_hands_lbl)
+
+	# DOC 4 §4.4 — botão CHUTAR + toggle Auto/Manual (Casual×Pro, §3.2)
+	var bottom := HBoxContainer.new()
+	layer.add_child(bottom)
+	bottom.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	bottom.offset_top = -70; bottom.offset_bottom = -16
+	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
+	bottom.add_theme_constant_override("separation", 10)
+	bottom.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_chutar_btn = UI.gold_btn("⚽ CHUTAR  (Espaço)", 18)
+	_chutar_btn.pressed.connect(_on_chutar_pressed)
+	bottom.add_child(_chutar_btn)
+	_auto_btn = UI.gold_btn("Auto: " + ("OFF" if pro_mode else "ON"), 12)
+	_auto_btn.pressed.connect(_toggle_auto)
+	bottom.add_child(_auto_btn)
+
+	# DOC 4 §4.2 — MEDIDOR DA MÃO (chips×mult) flutuando perto da bola (espaço de mundo)
+	_hand_meter = _tag("", 18, UI.GOLD2)
+	_hand_meter.z_index = 120
+	add_child(_hand_meter)
+
 	_goal_lbl = _lbl(Vector2(430, 150), 60, Color(1, 0.85, 0.3))
 	_goal_lbl.text = "G O O O L !"; _goal_lbl.modulate = Color(1, 1, 1, 0)
 	layer.add_child(_goal_lbl)
@@ -929,8 +1170,7 @@ func _fire_super_shot(shooter: Player, side: String) -> void:
 	if side == "home":
 		pot *= _next_shot_pot; _next_shot_pot = 1.0
 	ball.kick(aim - shooter.global_position, pot, randf_range(-0.7, 0.7), 0.0)
-	if side == "home" and _score:
-		_score.action("finalizacao")
+	# (a finalização/banca do home já foi feita em _home_shoot antes de chamar aqui)
 	_in_flight = true; carrier = null; _save_rolled = false
 	_enter_super_climax()
 	_play_cutin(side)
@@ -1134,6 +1374,34 @@ func _hud_update() -> void:
 		else:
 			_chips_lbl.add_theme_color_override("font_color", UI.RUNE2)
 	_clock_lbl.text = "%d'" % clampi(int(MATCH_SECONDS - clock), 0, 99)
+	if _hands_lbl != null:
+		_hands_lbl.text = "⚽×%d" % _hands_left
+
+	# DOC 4 §4.2 — medidor da mão flutua perto da bola enquanto VOCÊ tem a posse
+	if _hand_meter != null and not _bust_anim:
+		if _home_has_poss and not _in_flight and _score != null:
+			_hand_meter.visible = true
+			_hand_meter.modulate.a = 1.0
+			_hand_meter.text = "%d × %.1f" % [_score.chips, _score.effective_mult()]
+			_hand_meter.global_position = ball.global_position + Vector2(-26, -54)
+			# pulso quando o cerco aperta (consciência de risco, sem número)
+			if _pressao > LIMIAR_BOTE:
+				var pz := 1.0 + 0.12 * sin(Time.get_ticks_msec() * 0.02)
+				_hand_meter.scale = Vector2(pz, pz)
+				_hand_meter.add_theme_color_override("font_color", Color("ff7a4a"))
+			else:
+				_hand_meter.scale = Vector2.ONE
+				_hand_meter.add_theme_color_override("font_color", UI.GOLD2)
+		elif _hand_meter.modulate.a > 0.0 and not _home_has_poss:
+			_hand_meter.visible = false   # (bust mostra "PERDEU!" via tween próprio)
+
+	# DOC 4 §4.3 — vinheta avermelha conforme a pressão; §4.4 botão liga/desliga
+	if _vignette != null:
+		var want: float = _pressao if _home_has_poss and not _in_flight else 0.0
+		_vignette.modulate.a = lerpf(_vignette.modulate.a, want, 0.15)
+	if _chutar_btn != null:
+		_chutar_btn.disabled = not _can_shoot()
+		_chutar_btn.modulate.a = 1.0 if _can_shoot() else 0.45
 	# indicador de posse: ponto colorido + nome do time com a bola
 	if poss == "home":
 		_poss_lbl.text = "● " + _home_name
