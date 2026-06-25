@@ -5,6 +5,7 @@ extends Control
 ## • 2 slots de CONSUMÍVEL fixos (fora do reroll)
 ## • Reroll por ouro (só mexe nas 5 comuns). Faixa de elenco mostra o Tier atual.
 signal shop_done
+signal organize_team
 
 var main_offers: Array = []     # 5 itens {"kind","id"}; "sold" = já comprado
 var relic_off: Array = []       # 3 ids de relíquia
@@ -74,12 +75,16 @@ func _build() -> void:
 	for i in cons_off.size():
 		right.add_child(_cons_card(i))
 
-	# — rodapé: sair —
+	# — rodapé: organizar time · subir a torre —
 	var foot := HBoxContainer.new()
+	foot.add_theme_constant_override("separation", 10)
 	col.add_child(foot)
+	var org := UI.gold_btn("⚙ Organizar Time", 14)
+	org.pressed.connect(func(): organize_team.emit())
+	foot.add_child(org)
 	var sp := Control.new(); sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	foot.add_child(sp)
-	var leave := UI.gold_btn("Sair →", 15)
+	var leave := UI.gold_btn("Subir a Torre →", 15)
 	leave.pressed.connect(func(): shop_done.emit())
 	foot.add_child(leave)
 

@@ -3,12 +3,14 @@ extends Control
 ## → resultado. Telas emitem sinais; aqui a gente roteia. A partida (Node2D) é
 ## instanciada como filha e avisa o fim por sinal.
 const BeastSelect = preload("res://scripts/BeastSelect.gd")
-const MapScreen = preload("res://scripts/MapScreen.gd")
 const PrepScreen = preload("res://scripts/PrepScreen.gd")
-const BoosterScreen = preload("res://scripts/BoosterScreen.gd")
 const RelicScreen = preload("res://scripts/RelicScreen.gd")
-const EventScreen = preload("res://scripts/EventScreen.gd")
 const ShopScreen = preload("res://scripts/ShopScreen.gd")
+const TitleScreen = preload("res://scripts/TitleScreen.gd")
+const SettingsScreen = preload("res://scripts/SettingsScreen.gd")
+const DifficultyScreen = preload("res://scripts/DifficultyScreen.gd")
+const StartRewardScreen = preload("res://scripts/StartRewardScreen.gd")
+const TowerScreen = preload("res://scripts/TowerScreen.gd")
 const MatchScene = preload("res://scenes/Match.tscn")
 
 var current: Node = null
@@ -16,7 +18,33 @@ var current: Node = null
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	randomize()
+	Settings.apply_all()         # aplica opções salvas (tela cheia, vsync, volumes)
+	_show_title()
+
+# --- TELA INICIAL / MENU ---
+func _show_title() -> void:
+	_switch(TitleScreen.new(), {
+		"play_pressed": _new_game,
+		"continue_pressed": _continue_run,
+		"settings_pressed": _show_settings,
+		"quit_pressed": _quit_game,
+	})
+
+func _new_game() -> void:
+	GameState.clear_save()       # começo limpo; o save é regravado ao chegar no mapa
 	_show_beast_select()
+
+func _continue_run() -> void:
+	if GameState.load_run() and not GameState.ladder.is_empty():
+		_show_tower()
+	else:
+		_show_beast_select()
+
+func _show_settings() -> void:
+	_switch(SettingsScreen.new(), {"closed": _show_title})
+
+func _quit_game() -> void:
+	get_tree().quit()
 
 # --- transições ---
 func _switch(node: Node, sigs: Dictionary) -> void:
@@ -30,56 +58,50 @@ func _switch(node: Node, sigs: Dictionary) -> void:
 func _show_beast_select() -> void:
 	_switch(BeastSelect.new(), {"beast_selected": _on_beast})
 
+# escolheu a capitã → escolhe a DIFICULDADE (torre estilo MK)
 func _on_beast() -> void:
-	_show_booster()
+	_switch(DifficultyScreen.new(), {"difficulty_chosen": _on_difficulty})
 
-func _show_booster() -> void:
-	_switch(BoosterScreen.new(), {"booster_done": _show_map})
+func _on_difficulty(diff: String) -> void:
+	GameState.start_tower(diff)
+	_show_start_reward()
 
-func _show_map() -> void:
-	_switch(MapScreen.new(), {"node_chosen": _on_node, "organize_team": _show_prep_standalone})
+# recompensa de abertura (1 pacote / 1 relíquia / 3 cartas) → torre
+func _show_start_reward() -> void:
+	_switch(StartRewardScreen.new(), {"reward_done": _show_tower})
 
-func _show_prep_standalone() -> void:
-	var p := PrepScreen.new()
-	p.standalone = true
-	_switch(p, {"prep_done": _show_map})
-
-func _on_node(c: int, l: int) -> void:
-	var node: Dictionary = GameState.enter_node(c, l)
-	match node.get("type", ""):
-		"partida", "elite", "boss": _show_match()
-		"bau": _show_relic(func(_id): _show_map())
-		"evento": _show_event()
-		_: _show_map()
+# TORRE: anima a subida, dá highlight no oponente, "Lutar" → partida
+func _show_tower() -> void:
+	GameState.save_run()         # auto-save: o "Continuar" retoma na torre
+	_switch(TowerScreen.new(), {"fight_pressed": _show_match})
 
 func _show_match() -> void:
+	GameState.enter_match()      # define o oponente atual do degrau
 	_switch(MatchScene.instantiate(), {"match_over": _on_match_over})
 
 func _on_match_over(home_won: bool) -> void:
-	var r: String = GameState.complete_node(home_won)
+	var r: String = GameState.complete_tower(home_won)
 	match r:
-		"victory": _msg("🏆 CAMPEÃO!", "%s conquistou a Copa dos Mil Anos!" % GameState.beast.get("nome", ""), _show_beast_select, true)
-		"defeat": _msg("💀 DERROTA", "%s caiu. Fim da jornada." % GameState.beast.get("nome", ""), _show_beast_select, false)
-		"repechage": _msg("❤️ REPESCAGEM", "Você perdeu, mas tinha uma vida extra. Segue na Copa!", _show_map, true)
-		"act_clear":
-			# boss vencido → relíquia grátis → loja → anuncia o ato e segue
-			_show_relic(func(_id): _show_shop(func(): _msg("👑 ATO %d / 3" % GameState.act, "Ato anterior conquistado! Avance.", _show_map, true)))
+		"victory":
+			GameState.clear_save()
+			_msg("🏆 CAMPEÃO!", "%s chegou ao topo da torre e conquistou a Copa dos Mil Anos!" % GameState.beast.get("nome", ""), _show_title, true)
+		"defeat":
+			GameState.clear_save()
+			_msg("💀 DERROTA", "Você caiu da torre. Fim da jornada de %s." % GameState.beast.get("nome", ""), _show_title, false)
+		"vida_extra":
+			_msg("❤️ VIDA EXTRA", "Você perdeu, mas usou sua Vida Extra! Encare o mesmo oponente de novo.", _show_tower, true)
 		"continue":
-			# toda vitória abre a LOJA antes do mapa; elite ainda dá relíquia grátis
-			var tp: String = GameState.current_node.get("type", "")
-			if home_won and tp in ["elite", "boss"]:
-				_show_relic(func(_id): _show_shop(_show_map))
-			else:
-				_show_shop(_show_map)
-
-func _show_relic(after: Callable) -> void:
-	_switch(RelicScreen.new(), {"relic_chosen": after})
-
-func _show_event() -> void:
-	_switch(EventScreen.new(), {"event_done": func(): _show_map()})
+			# venceu → loja (com gerenciamento de time) → sobe a torre pro próximo
+			_show_shop(_show_tower)
 
 func _show_shop(after: Callable) -> void:
-	_switch(ShopScreen.new(), {"shop_done": after})
+	_switch(ShopScreen.new(), {"shop_done": after, "organize_team": _show_prep_from_shop})
+
+# gerenciamento de time a partir da loja (volta pra loja ao terminar)
+func _show_prep_from_shop() -> void:
+	var p := PrepScreen.new()
+	p.standalone = true
+	_switch(p, {"prep_done": func(): _show_shop(_show_tower)})
 
 # --- telas simples de mensagem/resultado ---
 func _msg(title: String, sub: String, cont: Callable, good: bool) -> void:

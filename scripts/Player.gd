@@ -5,6 +5,7 @@ class_name Player
 
 var team := "home"            # "home" ataca pra direita · "away" pra esquerda
 var role := "mid"             # gk / def / mid / fwd
+var is_captain := false       # capitã: nunca é nocauteada (não "cai" em campo)
 var home_pos := Vector2.ZERO  # vaga na formação (campo)
 var max_speed := 330.0    # arcade: mais rápido
 var accel := 3000.0       # acelera rápido (snappy)
@@ -89,6 +90,17 @@ func _refresh_hp_bar() -> void:
 ## Dano de combate; HP zera → nocaute (fora do campo alguns segundos).
 func take_damage(d: float) -> bool:
 	if ko: return false
+	# o GOLEIRO nunca toma dano de nenhuma mecânica (super chute / carrinho / combate)
+	if role == "gk":
+		return false
+	# a capitã aguenta o tranco: nunca é nocauteada (mantém um fio de HP)
+	if is_captain:
+		hp = maxf(hp_max * 0.12, hp - d)
+		_refresh_hp_bar()
+		_sprite.modulate = Color(2.2, 2.2, 2.2, 1.0)
+		var twc := create_tween()
+		twc.tween_property(_sprite, "modulate", Color(1, 1, 1, 1), 0.18)
+		return false
 	hp = maxf(0.0, hp - d)
 	_refresh_hp_bar()
 	if hp <= 0.0:

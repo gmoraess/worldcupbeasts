@@ -44,13 +44,19 @@ func _header() -> Control:
 	h.add_child(bv)
 	var rv := VBoxContainer.new()
 	rv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	rv.add_child(UI.lbl("Relíquias:", 10, UI.RUNE2))
-	var rtxt := "—"
-	if not GameState.relics.is_empty():
-		rtxt = ""
+	rv.add_child(UI.lbl("Relíquias: (passe o mouse)", 10, UI.RUNE2))
+	if GameState.relics.is_empty():
+		rv.add_child(UI.lbl("—", 14, UI.RUNE))
+	else:
+		var rh := HBoxContainer.new()
+		rh.add_theme_constant_override("separation", 6)
 		for r in GameState.relics:
-			rtxt += GameState.RELICS[r]["ic"] + " "
-	rv.add_child(UI.lbl(rtxt, 14, UI.RUNE))
+			var rd: Dictionary = GameState.RELICS.get(r, {})
+			var ic := UI.lbl(rd.get("ic", "🛡"), 18, UI.RUNE)
+			ic.mouse_filter = Control.MOUSE_FILTER_STOP        # recebe hover p/ o tooltip
+			ic.tooltip_text = "%s\n%s" % [rd.get("name", r), rd.get("desc", "")]
+			rh.add_child(ic)
+		rv.add_child(rh)
 	h.add_child(rv)
 	var sv := VBoxContainer.new()
 	sv.alignment = BoxContainer.ALIGNMENT_CENTER

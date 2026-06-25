@@ -84,6 +84,15 @@ const HERO_IDS := ["cuirass", "zab", "zak", "foot"]
 # em qualquer slot), então os squads abaixo misturam papéis livremente.
 const FORMATION := ["GK", "DEF", "DEF", "MID", "FWD"]
 
+# Pesos por posição: quanto cada stat importa pra aquela vaga (usado na troca
+# automática — uma fera "melhor pra posição" é a de maior soma ponderada aqui).
+const POS_WEIGHTS := {
+	"GK":  {"def": 1.4, "des": 0.6, "sta": 0.7, "ctrl": 0.4, "spd": 0.3, "fin": 0.1},
+	"DEF": {"des": 1.2, "def": 1.2, "sta": 0.8, "spd": 0.6, "ctrl": 0.5, "fin": 0.2},
+	"MID": {"ctrl": 1.1, "spd": 0.9, "des": 0.8, "sta": 0.8, "fin": 0.6, "def": 0.5},
+	"FWD": {"fin": 1.4, "spd": 0.9, "ctrl": 0.7, "des": 0.4, "sta": 0.5, "def": 0.2},
+}
+
 # TIERS do pool — curva de dificuldade e recrutamento (heróis = só capitães):
 const COMMON_IDS := ["urso", "rinoceronte", "lobo", "arara", "escorpiao"]
 const ELITE_IDS := ["elite_elefante", "elite_gorila", "elite_tigre"]
@@ -131,7 +140,15 @@ const RELICS := {
 	"armadura_real":   {"name": "Armadura Real", "ic": "🏰", "desc": "++defesa e fôlego, −velocidade", "mods": {"def_mult": 0.16, "sta_mult": 0.12, "spd_mult": -0.10}},
 	"relicario_fogo":  {"name": "Relicário de Fogo", "ic": "🌋", "desc": "++chute e velocidade, −controle", "mods": {"fin_mult": 0.18, "spd_mult": 0.10, "ctrl_mult": -0.08}},
 	"calice_vida":     {"name": "Cálice da Vida", "ic": "🏆", "desc": "+fôlego e +defesa (resistência)", "mods": {"sta_mult": 0.14, "def_mult": 0.10}},
+	"maestro":         {"name": "Maestro do Meio", "ic": "🎼", "desc": "Passes voltam a pontuar chips (+1) · +controle", "mods": {"ctrl_mult": 0.06}, "passe_pontua": true},
 }
+
+## A corrida tem a relíquia que faz passes pontuarem? (senão passe não dá chips)
+func passes_score() -> bool:
+	for r in relics:
+		if RELICS.get(r, {}).get("passe_pontua", false):
+			return true
+	return false
 
 # GEAR — relíquias EQUIPADAS num jogador (Doc 3 §6.3): mods só pra aquela fera.
 const GEAR := {
@@ -221,14 +238,14 @@ func add_copy(id: String) -> void:
 
 # PASSIVAS DE CAPITÃ — toda capitã mexe nos chips (joker embutido) + delta de cartas.
 const CAPTAIN_PASSIVE := {
-	"cuirass": {"nome": "Muralha Viva", "desc": "Cada jogada fecha com +4 chips · +1 carta", "cartas": 1,
-		"joker": {"gatilho": "ao_finalizar_jogada", "condicao": "", "efeito": {"chips": 4}}},
-	"zab": {"nome": "Fome de Caça", "desc": "Cada finalização: +1 mult", "cartas": 0,
-		"joker": {"gatilho": "ao_finalizar", "condicao": "", "efeito": {"add_mult": 1.0}}},
-	"zak": {"nome": "Relâmpago", "desc": "Jogada com 4+ passes: +18 chips", "cartas": 0,
-		"joker": {"gatilho": "ao_finalizar_jogada", "condicao": "passes_na_jogada_>=4", "efeito": {"chips": 18}}},
-	"foot": {"nome": "Instinto Matador", "desc": "Gol: +2 mult (−1 carta)", "cartas": -1,
-		"joker": {"gatilho": "ao_marcar_gol", "condicao": "", "efeito": {"add_mult": 2.0}}},
+	"cuirass": {"nome": "Muralha Viva", "desc": "Cada finalização: +12 chips · +1 carta", "cartas": 1,
+		"joker": {"gatilho": "ao_finalizar_jogada", "condicao": "", "efeito": {"chips": 12}}},
+	"zab": {"nome": "Fome de Caça", "desc": "Cada finalização: +0,4 mult", "cartas": 0,
+		"joker": {"gatilho": "ao_finalizar", "condicao": "", "efeito": {"add_mult": 0.4}}},
+	"zak": {"nome": "Relâmpago", "desc": "Gol: +28 chips", "cartas": 0,
+		"joker": {"gatilho": "ao_marcar_gol", "condicao": "", "efeito": {"chips": 28}}},
+	"foot": {"nome": "Instinto Matador", "desc": "Gol: +1 mult no bônus (−1 carta)", "cartas": -1,
+		"joker": {"gatilho": "ao_marcar_gol", "condicao": "", "efeito": {"add_mult": 1.0}}},
 }
 func captain_passive() -> Dictionary:
 	return CAPTAIN_PASSIVE.get(capita, {})
@@ -259,8 +276,79 @@ var extra_life: bool = true
 var act: int = 0
 var col: int = -1
 var lane: int = 1
-var map_data: Array = []
+var map_data: Array = []        # (legado, não usado — a torre substituiu o mapa)
 var current_node: Dictionary = {}
+
+# ==========================================================================
+#  TORRE (estilo Mortal Kombat) — escada linear de oponentes por dificuldade.
+#  Fácil = curta + fracos · Normal = +2 degraus · Hardcore = +4 degraus.
+#  ef = fator de força do inimigo (cresce a cada degrau). Winrate aferido por sim.
+# ==========================================================================
+const DIFFICULTY := {
+	"facil":    {"nome": "Fácil",    "ic": "🟢", "rungs": 5, "ef_base": 0.66, "ef_step": 0.05, "tgt": 0.72,
+		"desc": "Torre curta, oponentes fracos. Pra aprender."},
+	"normal":   {"nome": "Normal",   "ic": "🟡", "rungs": 7, "ef_base": 0.80, "ef_step": 0.05, "tgt": 1.0,
+		"desc": "+2 oponentes e mais fortes. O desafio padrão."},
+	"hardcore": {"nome": "Hardcore", "ic": "🔴", "rungs": 9, "ef_base": 0.92, "ef_step": 0.05, "tgt": 1.28,
+		"desc": "+4 oponentes, brutais. Só pros feras."},
+}
+var difficulty := "normal"
+var ladder: Array = []          # oponentes (dicts no formato de "node": type/enemy/tier/cleared)
+var rung := 0                   # degrau atual da torre (0 = primeiro oponente)
+
+# ==========================================================================
+#  SAVE / LOAD da corrida (tela inicial → Continuar)
+# ==========================================================================
+const SAVE_PATH := "user://wcb_save.json"
+
+func has_save() -> bool:
+	return FileAccess.file_exists(SAVE_PATH)
+
+## Salva o estado atual da corrida (chamado ao chegar no mapa).
+func save_run() -> void:
+	var data := {
+		"capita": capita, "titulares": titulares, "reservas": reservas,
+		"relics": relics, "jokers": jokers, "gear_inv": gear_inv, "equipped": equipped,
+		"copies": copies, "consumables": consumables, "gold": gold, "extra_life": extra_life,
+		"act": act, "difficulty": difficulty, "ladder": ladder, "rung": rung, "current_node": current_node,
+	}
+	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify(data))
+		f.close()
+
+## Carrega a corrida salva pro estado atual. Retorna true se deu certo.
+func load_run() -> bool:
+	if not has_save(): return false
+	var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+	if f == null: return false
+	var txt := f.get_as_text(); f.close()
+	var d: Variant = JSON.parse_string(txt)
+	if typeof(d) != TYPE_DICTIONARY: return false
+	capita = String(d.get("capita", ""))
+	beast_id = capita
+	beast = POOL.get(capita, POOL["cuirass"])
+	titulares = d.get("titulares", [])
+	reservas = d.get("reservas", [])
+	relics = d.get("relics", [])
+	jokers = d.get("jokers", [])
+	gear_inv = d.get("gear_inv", [])
+	equipped = d.get("equipped", ["", "", "", "", ""])
+	copies = d.get("copies", {})
+	consumables = d.get("consumables", [])
+	gold = int(d.get("gold", 20))
+	extra_life = bool(d.get("extra_life", true))
+	act = int(d.get("act", 0))
+	difficulty = String(d.get("difficulty", "normal"))
+	ladder = d.get("ladder", [])
+	rung = int(d.get("rung", 0))
+	current_node = d.get("current_node", {})
+	return true
+
+## Apaga o save (ao terminar a corrida: vitória/derrota).
+func clear_save() -> void:
+	if has_save():
+		DirAccess.remove_absolute(SAVE_PATH)
 
 func start_run(p_captain_id: String) -> void:
 	capita = p_captain_id
@@ -279,7 +367,7 @@ func start_run(p_captain_id: String) -> void:
 	gold = 20
 	extra_life = true
 	act = 0; col = -1; lane = 1
-	generate_map()
+	ladder = []; rung = 0          # a torre é montada em start_tower() após a dificuldade
 
 ## Squad inicial da capitã (determinístico). Fallback: capitã + comuns.
 func build_default_squad(captain_id: String) -> Array:
@@ -415,7 +503,7 @@ func enemy_name() -> String:
 
 ## Pontuação-alvo do nó atual (Doc 3). Fallback p/ cena solta.
 func target() -> int:
-	return current_node.get("enemy", {}).get("target", 30)
+	return current_node.get("enemy", {}).get("target", 95)
 
 const ModifiersLib = preload("res://scripts/data/Modifiers.gd")
 const MatchCardsLib = preload("res://scripts/match/MatchCards.gd")
@@ -457,6 +545,35 @@ func _weighted_pick(ids: Array) -> String:
 func recruit(id: String) -> void:
 	if not (titulares + reservas).has(id): reservas.append(id)
 	if not copies.has(id): copies[id] = 1
+	auto_integrate(id)
+
+## Fit de uma fera numa posição = soma ponderada dos stats relevantes (POS_WEIGHTS).
+func pos_score(stats: Dictionary, position: String) -> float:
+	var w: Dictionary = POS_WEIGHTS.get(position, {})
+	var s := 0.0
+	for k in w: s += float(stats.get(k, 1.0)) * float(w[k])
+	return s
+
+## Troca automática: se a fera nova encaixa MELHOR (pelos stats da posição) em
+## algum slot titular (exceto o da capitã), ela entra e o antigo vai pro banco.
+## Retorna o índice do slot trocado, ou -1 se ficou no banco. Pedido do usuário.
+func auto_integrate(id: String) -> int:
+	if not POOL.has(id): return -1
+	var new_stats: Dictionary = POOL[id].get("stats", NEUTRAL)
+	var best_slot := -1
+	var best_gain := 0.0
+	for i in titulares.size():
+		if titulares[i] == capita: continue          # a capitã não sai do time
+		var pos: String = FORMATION[i]
+		var gain: float = pos_score(new_stats, pos) - pos_score(POOL[titulares[i]].get("stats", NEUTRAL), pos)
+		if gain > best_gain:
+			best_gain = gain; best_slot = i
+	if best_slot < 0: return -1
+	var old: String = titulares[best_slot]
+	titulares[best_slot] = id
+	reservas.erase(id)
+	if old != id and not reservas.has(old): reservas.append(old)
+	return best_slot
 
 ## Desvantagem (blind) do nó atual — cfg p/ o ScoreEngine + nome/desc p/ o HUD.
 func debuff() -> Dictionary:
@@ -475,9 +592,109 @@ func concede_bump() -> int:
 # ==========================================================================
 ## Monta o squad inimigo de um nó (saca por tier do mesmo pool) + líder p/ exibir.
 ## normal=5 comuns · elite=2 elites+3 comuns · boss=chefe+1 elite+3 comuns.
+# ==========================================================================
+#  TORRE — geração da escada de oponentes e fluxo de progresso
+# ==========================================================================
+const TYPE_OF := {"normal": "partida", "elite": "elite", "boss": "boss"}
+
+## Monta a escada de oponentes da dificuldade escolhida (chamado após escolher).
+func start_tower(diff: String) -> void:
+	difficulty = diff if DIFFICULTY.has(diff) else "normal"
+	ladder = _build_ladder(difficulty)
+	rung = 0
+	current_node = ladder[0]
+
+## Monta uma escada (sem alterar o estado) — usado pro preview na tela de dificuldade.
+func _build_ladder(diff: String) -> Array:
+	var cfg: Dictionary = DIFFICULTY.get(diff, DIFFICULTY["normal"])
+	var n: int = int(cfg["rungs"])
+	var ef_base: float = float(cfg["ef_base"])
+	var ef_step: float = float(cfg["ef_step"])
+	var out: Array = []
+	for i in n:
+		var f: float = ef_base + i * ef_step
+		var tier := "normal"
+		if i == n - 1:
+			tier = "boss"
+		elif i >= 2 and i % 3 == 2:
+			tier = "elite"
+		var boss_id := ""
+		if tier == "boss":
+			boss_id = ACT_BOSS[randi() % ACT_BOSS.size()]
+		var enemy: Dictionary = _make_enemy_f(tier, f, i, boss_id)
+		out.append({"type": TYPE_OF.get(tier, "partida"), "tier": tier, "enemy": enemy, "cleared": false})
+	return out
+
+func preview_ladder(diff: String) -> Array:
+	return _build_ladder(diff)
+
+func tower_len() -> int:
+	return ladder.size()
+
+## Define o oponente atual como o nó da partida e o retorna.
+func enter_match() -> Dictionary:
+	if rung >= 0 and rung < ladder.size():
+		current_node = ladder[rung]
+	return current_node
+
+## Resultado da partida na torre. "victory" no topo · "vida_extra" gasta a vida
+## (refaz o oponente) · "defeat" sem vida · "continue" sobe um degrau.
+func complete_tower(won: bool) -> String:
+	if not won:
+		if extra_life:
+			extra_life = false
+			return "vida_extra"            # refaz o mesmo oponente
+		return "defeat"
+	var tier: String = current_node.get("tier", "normal")
+	gold += {"normal": 10, "elite": 20, "boss": 30}.get(tier, 10)
+	if rung < ladder.size():
+		ladder[rung]["cleared"] = true
+	rung += 1
+	if rung >= ladder.size():
+		return "victory"
+	current_node = ladder[rung]
+	return "continue"
+
+func _make_enemy_f(tier: String, f: float, rung_idx: int, boss_id: String = "") -> Dictionary:
+	var tier_mult: float = {"normal": 1.0, "elite": 1.08, "boss": 1.16}.get(tier, 1.0)
+	var ff: float = f * tier_mult
+	var commons: Array = COMMON_IDS.duplicate(); commons.shuffle()
+	var elites: Array = ELITE_IDS.duplicate(); elites.shuffle()
+	var ids: Array = []
+	match tier:
+		"boss":  ids = [boss_id, elites[0]] + commons.slice(0, 3)
+		"elite": ids = elites.slice(0, 2) + commons.slice(0, 3)
+		_:       ids = commons
+	var squad: Array = []
+	for id in ids:
+		squad.append(_scaled(POOL[id]["stats"], ff))
+	var leader: String = boss_id
+	if leader == "":
+		var best := -1.0
+		for id in ids:
+			var fin: float = POOL[id]["stats"]["fin"]
+			if fin > best: best = fin; leader = id
+	var tmult: float = float(DIFFICULTY.get(difficulty, {}).get("tgt", 1.0))
+	var target: int = int(round(_target_for_rung(tier, rung_idx) * tmult))
+	var pool: Array = DEBUFF_POOL.get(tier, DEBUFF_POOL["normal"])
+	var debuff: String = pool[randi() % pool.size()]
+	var bump: int = {"normal": 6, "elite": 10, "boss": 16}.get(tier, 6)
+	return {"name": POOL[leader]["nome"], "crest": POOL[leader]["crest"], "leader": leader,
+		"stats": _scaled(POOL[leader]["stats"], ff), "squad": squad, "target": target,
+		"debuff": debuff, "concede_bump": bump}
+
+## Alvo de pontos por degrau (sobe ao subir a torre; o player também fica mais forte).
+func _target_for_rung(tier: String, r: int) -> int:
+	match tier:
+		"boss":  return 200 + r * 12
+		"elite": return 135 + r * 10
+		_:       return 88 + r * 8
+
 func _make_enemy(tier: String, a: int, boss_id: String = "") -> Dictionary:
 	var tier_mult: float = {"normal": 1.0, "elite": 1.08, "boss": 1.16}.get(tier, 1.0)
-	var f: float = (1.0 + a * 0.10) * tier_mult
+	# inimigo começa mais fraco que o time do jogador (fôlego no início) e ESCALA por
+	# ato — nos atos seguintes os relíquias/tiers/skill do jogador compensam. Doc 4 §9.
+	var f: float = (0.82 + a * 0.13) * tier_mult
 	var commons: Array = COMMON_IDS.duplicate(); commons.shuffle()
 	var elites: Array = ELITE_IDS.duplicate(); elites.shuffle()
 	var ids: Array = []
@@ -510,9 +727,9 @@ func _make_enemy(tier: String, a: int, boss_id: String = "") -> Dictionary:
 ## — afinar com feel no modo Pro. cresce com o ato (build do jogador melhora).
 func _target_for(tier: String, a: int) -> int:
 	match tier:
-		"boss":  return 70 + a * 28             # A1 70 · A2 98 · A3 126
-		"elite": return 45 + a * 16             # A1 45 · A2 61 · A3 77
-		_:       return 30 + a * 12             # normal: A1 30 · A2 42 · A3 54
+		"boss":  return 215 + a * 70            # A1 215 · A2 285 · A3 355
+		"elite": return 145 + a * 45            # A1 145 · A2 190 · A3 235
+		_:       return 95 + a * 30             # normal: A1 95 · A2 125 · A3 155
 
 func _scaled(stats: Dictionary, f: float) -> Dictionary:
 	var out := {}
@@ -673,6 +890,7 @@ func add_reserve(id: String) -> void:
 	if not titulares.has(id) and not reservas.has(id):
 		reservas.append(id)
 	if not copies.has(id): copies[id] = 1
+	auto_integrate(id)
 
 # ==========================================================================
 #  LOJA PÓS-PARTIDA (estilo Brotato) — ofertas + preços + compras.

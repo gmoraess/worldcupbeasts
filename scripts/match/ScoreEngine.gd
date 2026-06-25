@@ -6,7 +6,7 @@ extends RefCounted
 # chips-base por ação (Doc 3 §3.1) — varrer no playtest
 const CHIPS := {
 	"passe": 1, "lancamento": 3, "desarme": 5, "porrada": 4,
-	"nocaute": 10, "finalizacao": 5, "gol": 30, "super_gol": 60,
+	"nocaute": 10, "finalizacao": 10, "gol": 40, "super_gol": 80,
 }
 
 var total := 0
@@ -22,6 +22,8 @@ var chips_mult := 1.0            # multiplica os chips pontuados na jogada
 var gol_mult := 1.0              # multiplica os chips de gol/super-gol
 var passe_chips := -1            # < 0 = usa o padrão; senão sobrescreve chips de passe
 var mult_max := 0.0              # 0 = sem teto; senão limita o mult
+var passe_scores := false        # passe/lançamento só pontuam chips se TRUE (relíquia Maestro).
+                                 # Por padrão NÃO pontuam (senão tocar infinito ganharia sempre).
 
 # buffs de "próxima jogada" (cartas de pontuação) — aplicados no início da próxima posse
 var next_chips := 0
@@ -51,8 +53,11 @@ func start_possession() -> void:
 ## Registra uma ação de futebol/combate; soma chips e dispara jokers do gatilho.
 func action(kind: String) -> void:
 	var base: int = int(CHIPS.get(kind, 0))
-	if kind == "passe" and passe_chips >= 0:
-		base = passe_chips                       # debuff Muralha: passes não pontuam
+	if kind == "passe" or kind == "lancamento":
+		if not passe_scores:
+			base = 0                             # passe não pontua por padrão (anti-toca-toca)
+		elif kind == "passe" and passe_chips >= 0:
+			base = passe_chips                   # debuff Muralha: passes não pontuam
 	if kind == "gol" or kind == "super_gol":
 		base = int(round(base * gol_mult))       # debuff Anti-Artilheiro: gol vale menos
 	chips += base
@@ -81,8 +86,21 @@ func finalizar_jogada() -> int:
 ## Doc 4 §2.3 — GOL adiciona um bônus POR CIMA da mão já bancada no chute,
 ## usando o mult capturado no momento do chute. Retorna quanto somou.
 func add_goal_bonus(super_gol: bool, shot_mult: float) -> int:
+	gols_marcados += 1
 	var base: int = int(CHIPS.get("super_gol" if super_gol else "gol", 30))
-	var bonus := int(round(float(base) * gol_mult * shot_mult * chips_mult))
+	var gmult := shot_mult
+	# jokers/passivas de GOL (ex.: foot +mult; zak +chips; relíquias) afetam o bônus.
+	# (no Doc 4 o gol não passa mais por action(), então disparamos o gatilho aqui)
+	for j in jokers:
+		if j.get("gatilho", "") != "ao_marcar_gol":
+			continue
+		if not _cond_ok(j, "gol"):
+			continue
+		var e: Dictionary = j.get("efeito", {})
+		base += int(e.get("chips", 0))
+		gmult += float(e.get("add_mult", 0.0))
+		gmult *= float(e.get("x_mult", 1.0))
+	var bonus := int(round(float(base) * gol_mult * gmult * chips_mult))
 	total += bonus
 	return bonus
 

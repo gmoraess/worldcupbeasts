@@ -11,8 +11,8 @@ extends Node2D
 
 signal aimed(aim_world: Vector2, power01: float)
 
-const DRAG_MIN := 60.0      # arraste mínimo (px de mundo) → força mínima
-const DRAG_MAX := 360.0     # arraste pra força máxima
+const DRAG_MIN := 36.0      # arraste mínimo (px de mundo) → força mínima
+const DRAG_MAX := 220.0     # arraste pra força máxima (chega rápido — chute sempre forte)
 
 var ball_pos := Vector2.ZERO        # de onde a bola sai
 var goal_x := 0.0                   # linha do gol que o jogador ataca

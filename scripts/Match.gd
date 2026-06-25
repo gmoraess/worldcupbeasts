@@ -8,6 +8,7 @@ const Player = preload("res://scripts/Player.gd")
 const ScoreEngineLib = preload("res://scripts/match/ScoreEngine.gd")
 const MatchCardsLib = preload("res://scripts/match/MatchCards.gd")
 const SkillShotLib = preload("res://scripts/match/SkillShot.gd")
+const PassAimLib = preload("res://scripts/match/PassAim.gd")
 
 signal match_over(home_won: bool)   # avisa o roteador quando a partida termina
 
@@ -86,23 +87,42 @@ var _hand_layer: CanvasLayer = null
 var _targeting := ""           # id da carta esperando escolha de jogador ("" = nenhuma)
 
 # --- DOC 4: o verbo (press-your-luck + chute de perícia) ---
-const HANDS_TOTAL := 10        # posses de ataque por partida (Doc 4 §6)
-const BASE_PRESSAO := 0.07     # pressão sobe por segundo (base)
-const K_PRESSAO := 0.20        # ganho extra por desarme do adversário
+const HANDS_TOTAL := 12        # posses de ataque por partida (Doc 4 §6) — mais mãos = menos variância
+const BASE_PRESSAO := 0.05     # pressão sobe por segundo (base) — mais tempo p/ decidir
+const K_PRESSAO := 0.16        # ganho extra por desarme do adversário
 const LIMIAR_BOTE := 0.45      # acima disso, botes do adversário escalam
+const TACKLE_CD := 3.2         # cooldown do carrinho manual (Doc 4 §2.4)
+const TACKLE_REACH := 90.0     # de quão longe o carrinho alcança o portador
+var _tackle_cd := 0.0
 var pro_mode := true           # true = jogador decide quando chutar e mira (Doc 4 §3.2)
 var _pressao := 0.0            # 0..1, NÃO exibido como número (vinheta/pulso)
 var _hand_banked := false      # a mão atual já foi bancada (chute saiu)? evita bust duplo
 var _shot_mult := 1.0          # mult capturado no chute (p/ o bônus de gol por cima)
 var _shot_pending_super := false
 var _human_shot := false       # o chute em voo é de perícia do jogador (GK resolve por geometria)
+var _shot_live := false        # há um CHUTE a caminho do gol — só o goleiro resolve (sem interceptação solta)
+var _pass_safe := false        # passe pra trás/lado: protegido (só o seu time recebe — Doc do usuário)
 var _hands_left := HANDS_TOTAL
+var _shots_taken := 0          # telemetria de balanceamento
+var _busts := 0
+var _goals_home := 0
+
+# Contadores no PROCESSO (não usar await create_timer: ele dispararia na partida já
+# destruída ao trocar de tela → crash). Aqui param sozinhos quando o nó é liberado.
+var _kickoff_t := -1.0
+var _kickoff_team := ""
+var _finish_after_t := -1.0
+var _endmatch_t := -1.0
+var _endmatch_won := false
 var _aiming := false           # mira ativa (árvore pausada)
 var _bust_anim := false        # animação de "PERDEU!" rodando (não sobrescrever o medidor)
 var _skill: Node2D = null      # overlay do chute de perícia
+var _passer: Node2D = null     # overlay da mira de passe (360º)
 var _hand_meter: Label = null  # readout chips×mult perto da bola
 var _vignette: Control = null
+var _pass_btn: Button = null
 var _chutar_btn: Button = null
+var _tackle_btn: Button = null
 var _auto_btn: Button = null
 var _hands_lbl: Label = null
 
@@ -134,11 +154,12 @@ func _ready() -> void:
 	_score = ScoreEngineLib.new()
 	_score.jokers = GameState.player_jokers()
 	_score.apply_debuff(GameState.debuff_cfg())     # desvantagem do inimigo (blind)
+	_score.passe_scores = GameState.passes_score()  # passe só pontua com a relíquia Maestro
 	_target = GameState.target()
 	_concede_bump = GameState.concede_bump()
 	_hands_left = HANDS_TOTAL
-	# Pro (jogador decide/mira) só com tela; headless/sim usa o piloto automático (Casual).
-	pro_mode = DisplayServer.get_name() != "headless"
+	# começa no AUTO (piloto automático) — o jogador liga o Pro pelo botão se quiser.
+	pro_mode = false
 	# mão = consumíveis comprados na loja (até o nº de slots da capitã)
 	_hand = GameState.consumables.slice(0, GameState.hand_size())
 
@@ -167,6 +188,9 @@ func _build_team(team: String) -> void:
 		var profile: Dictionary = squad[i] if i < squad.size() else GameState.NEUTRAL
 		var p := Player.new()
 		p.team = team; p.role = s[0]
+		# capitã do jogador: nunca é nocauteada (não "cai" em campo)
+		if team == "home" and i < GameState.titulares.size():
+			p.is_captain = GameState.titulares[i] == GameState.capita
 		p.home_pos = Vector2(s[1], s[2])
 		p.global_position = p.home_pos
 		add_child(p)
@@ -184,6 +208,8 @@ func _kickoff(team: String) -> void:
 	_climax = false
 	_in_flight = false
 	_super_shot_live = ""
+	_shot_live = false
+	_pass_safe = false
 	_steal_cd = 0.0
 	_stuck_t = 0.0
 	_stuck_ref = ball.global_position
@@ -193,11 +219,31 @@ func _kickoff(team: String) -> void:
 #  LOOP
 # ==========================================================================
 func _physics_process(delta: float) -> void:
+	# fim da partida agendado (avisa o roteador) — roda mesmo com over=true
+	if _endmatch_t >= 0.0:
+		_endmatch_t -= delta
+		if _endmatch_t <= 0.0:
+			_endmatch_t = -1.0
+			match_over.emit(_endmatch_won)
+		return
 	if over: return
+	# reinício pós-gol e fecho por fim-de-mãos (no processo, não em timers órfãos)
+	if _kickoff_t >= 0.0:
+		_kickoff_t -= delta
+		if _kickoff_t <= 0.0:
+			_kickoff_t = -1.0
+			_kickoff(_kickoff_team)
+	if _finish_after_t >= 0.0:
+		_finish_after_t -= delta
+		if _finish_after_t <= 0.0:
+			_finish_after_t = -1.0
+			_finish_by_target(_score != null and _score.total >= _target)
+			return
 	_goal_cd = maxf(0.0, _goal_cd - delta)
 	_shot_cd = maxf(0.0, _shot_cd - delta)
 	_pass_t = maxf(0.0, _pass_t - delta)
 	_cutin_cd = maxf(0.0, _cutin_cd - delta)
+	_tackle_cd = maxf(0.0, _tackle_cd - delta)
 	if _pass_t <= 0.0: _pass_to = null
 	if _goal_cd <= 0.0:
 		clock = maxf(0.0, clock - delta)
@@ -207,7 +253,8 @@ func _physics_process(delta: float) -> void:
 
 	_update_possession(delta)
 	_pressure_step(delta)         # Doc 4 §2.1: a marcação aperta enquanto você segura a bola
-	_combat_step(delta)           # porradaria: dano/nocaute (Doc 3 §6)
+	_auto_tackle_step()           # modo Auto: carrinho automático na defesa
+	_combat_step(delta)           # (desativado) dano ambiente
 	_super_shot_hits()            # super-chute atropela adversários no caminho
 	_anti_deadlock(delta)         # rede de segurança: bola presa em disputa > 3s
 	_gk_save()                    # goleiro defende (por lógica — a bola atravessa fisicamente)
@@ -230,8 +277,18 @@ func _update_possession(delta: float) -> void:
 	if _in_flight and spd < 45.0:
 		_in_flight = false           # bola parou → vira bola solta (disputável)
 		_super_shot_live = ""
-	if _in_flight:
-		# recepção: alguém alcança a bola já desacelerada
+		_shot_live = false
+		_pass_safe = false
+	if _shot_live and _in_flight:
+		pass    # Doc 4: CHUTE a caminho do gol — ninguém "recebe" no meio; só o goleiro resolve
+	elif _in_flight and _pass_safe:
+		# passe pra trás/lado PROTEGIDO e PRECISO: o recebedor mirado pega (raio generoso,
+		# sem trava de velocidade — ele corre pra bola e domina). Só o seu time recebe.
+		var rcv: Player = _pass_to if (_pass_to != null and is_instance_valid(_pass_to) and not _pass_to.ko) else _closest_home_to_ball()
+		if rcv != null and rcv.global_position.distance_to(ball.global_position) < CONTROL_R + 26.0:
+			_set_carrier(rcv)
+	elif _in_flight:
+		# recepção: alguém alcança a bola já desacelerada (passe/sobra)
 		if spd < 470.0:
 			var p := _closest_any()
 			if p != null and p.global_position.distance_to(ball.global_position) < CONTROL_R + 5.0:
@@ -256,8 +313,8 @@ func _update_possession(delta: float) -> void:
 		if opp != null and opp.global_position.distance_to(carrier.global_position) < 28.0:
 			var des: float = opp.stats.get("des", 1.0)
 			var ctrl: float = carrier.stats.get("ctrl", 1.0)
-			var press_mult := (0.5 + _pressao * 2.2) if carrier.team == "home" else 1.0
-			if randf() < 0.10 * clampf(des / maxf(0.4, ctrl), 0.4, 2.4) * press_mult:
+			var press_mult := (0.35 + _pressao * 1.4) if carrier.team == "home" else 1.0
+			if randf() < 0.07 * clampf(des / maxf(0.4, ctrl), 0.4, 2.4) * press_mult:
 				_shake = maxf(_shake, 4.0)
 				_set_carrier(opp)
 				_add_fury(opp.team, "STEAL")
@@ -269,7 +326,9 @@ func _set_carrier(p: Player) -> void:
 	poss = p.team
 	_in_flight = false
 	_pass_to = null
-	_steal_cd = maxf(_steal_cd, 0.3)
+	_pass_safe = false
+	_shot_live = false
+	_steal_cd = maxf(_steal_cd, 0.7)   # graça ao receber: controla a bola antes de poder ser roubado
 	_score_owner(p.team)
 
 # ==========================================================================
@@ -308,6 +367,7 @@ func _check_target() -> void:
 # ==========================================================================
 ## BUST: perdeu a bola sem chutar → a mão vira pó. Consome uma posse. Tem que doer.
 func _bust() -> void:
+	_busts += 1
 	_score.reset_hand()
 	_bust_fx()
 	_spend_hand()
@@ -316,6 +376,7 @@ func _bust() -> void:
 ## A bola sai pra `aim` com `power01` (0..1). Gol depois soma bônus por cima.
 func _home_shoot(aim: Vector2, power01: float, is_super: bool, by_human: bool) -> void:
 	if carrier == null or carrier.team != "home": return
+	_shots_taken += 1
 	var shooter := carrier
 	if _score: _score.action("finalizacao")         # o chute em si conta chips + jokers (matador)
 	_shot_mult = _score.effective_mult()
@@ -329,13 +390,16 @@ func _home_shoot(aim: Vector2, power01: float, is_super: bool, by_human: bool) -
 		_fire_super_shot(shooter, "home")          # bomba + cut-in (usa o caminho do super)
 		return
 	var fin: float = shooter.stats.get("fin", 1.0)
-	var pot := lerpf(620.0, 1180.0, clampf(power01, 0.0, 1.0)) + fin * 120.0
+	# FORÇA (atributo de chute = fin): o piso já é um chute de verdade (rápido demais
+	# pra perseguir); a força do arraste e o fin somam por cima. Fica no patamar do
+	# automático ou acima — sem aquela sensação de "chute mole".
+	var pot := lerpf(900.0, 1500.0, clampf(power01, 0.0, 1.0)) + fin * 200.0
 	pot *= _next_shot_pot; _next_shot_pot = 1.0     # poção Mira Certeira
-	# finalização alta = menos ruído na direção (mira mais fiel ao que pediu)
-	var noise := (1.5 - clampf(fin, 0.5, 1.5)) * (10.0 if by_human else 48.0)
+	# PRECISÃO (fin): finalização alta = menos ruído na direção (mira mais fiel)
+	var noise := (1.5 - clampf(fin, 0.5, 1.5)) * (8.0 if by_human else 48.0)
 	var tgt := aim + Vector2(0, randf_range(-noise, noise))
-	ball.kick(tgt - shooter.global_position, pot, randf_range(-0.6, 0.6) * (1.3 - fin), 0.0)
-	_in_flight = true; carrier = null; _save_rolled = false
+	ball.kick(tgt - shooter.global_position, pot, randf_range(-0.5, 0.5) * (1.3 - fin), 0.0)
+	_in_flight = true; carrier = null; _save_rolled = false; _shot_live = true
 	_enter_climax()
 
 ## Gasta uma posse de ataque; acabando as mãos, encerra pela pontuação-alvo.
@@ -346,9 +410,7 @@ func _spend_hand() -> void:
 		_finish_after_flight()
 
 func _finish_after_flight() -> void:
-	await get_tree().create_timer(2.4).timeout
-	if not over:
-		_finish_by_target(_score != null and _score.total >= _target)
+	_finish_after_t = 2.4        # contado no _physics_process (sem timer órfão)
 
 ## Pede o chute de perícia: pausa, monta o overlay de mira com o tell do goleiro.
 func _begin_skillshot() -> void:
@@ -380,6 +442,35 @@ func _on_skill_aimed(aim_world: Vector2, power01: float) -> void:
 		_skill.queue_free(); _skill = null
 	_aiming = false
 	_home_shoot(aim_world, power01, _super_ready["home"] and _super_kind("home") == "shot", true)
+
+## Pede a mira de PASSE (360º): pausa, destaca os companheiros, espera o clique.
+func _begin_passaim() -> void:
+	if _aiming or carrier == null or carrier.team != "home" or _in_flight: return
+	_aiming = true
+	var passer := carrier
+	var mate_pos: Array = []
+	for p in home:
+		if p == passer or p.ko: continue        # qualquer companheiro (inclui goleiro)
+		mate_pos.append(p.global_position)
+	_passer = PassAimLib.new()
+	add_child(_passer)
+	_passer.setup(ball.global_position, mate_pos, FIELD)
+	_passer.passed.connect(_on_passed)
+	_passer.cancelled.connect(_on_pass_cancelled)
+	get_tree().paused = true
+
+func _on_passed(aim_world: Vector2) -> void:
+	get_tree().paused = false
+	if _passer != null:
+		_passer.queue_free(); _passer = null
+	_aiming = false
+	_manual_pass(aim_world)
+
+func _on_pass_cancelled() -> void:
+	get_tree().paused = false
+	if _passer != null:
+		_passer.queue_free(); _passer = null
+	_aiming = false
 
 ## Feedback de BUST (Doc 4 §5): a mão estilhaça/acinzenta — a lição "devia ter chutado".
 func _bust_fx() -> void:
@@ -427,21 +518,138 @@ func _can_shoot() -> bool:
 	return pro_mode and not _aiming and not _in_flight and not over \
 		and carrier != null and carrier.team == "home"
 
-func _on_chutar_pressed() -> void:
+## Pode passar? (mesmo do chute — você precisa estar com a bola)
+func _can_pass() -> bool:
+	return _can_shoot()
+
+## Pode dar carrinho? (Pro, adversário com a bola, cooldown zerado) — Doc 4 §2.4
+func _can_tackle() -> bool:
+	return pro_mode and not _aiming and not over and _tackle_cd <= 0.0 \
+		and carrier != null and carrier.team == "away"
+
+func _press_pass() -> void:
+	if _can_pass(): _begin_passaim()
+
+func _press_shoot() -> void:
 	if _can_shoot(): _begin_skillshot()
+
+func _press_tackle() -> void:
+	if _can_tackle(): _do_tackle()
 
 func _toggle_auto() -> void:
 	pro_mode = not pro_mode
 	if _auto_btn != null:
 		_auto_btn.text = "Auto: " + ("OFF" if pro_mode else "ON")
-	if not pro_mode and _aiming and _skill != null:
-		# cancelou a mira ao virar Casual → resolve um chute rápido
-		_skill.quick_shot()
+	if not pro_mode and _aiming:
+		# virou Casual no meio da mira → resolve/cancela o overlay aberto
+		if _skill != null:
+			_skill.quick_shot()
+		elif _passer != null:
+			_on_pass_cancelled()
 
 func _unhandled_input(e: InputEvent) -> void:
-	if _aiming: return
-	if e is InputEventKey and e.pressed and not e.echo and e.keycode == KEY_SPACE:
-		if _can_shoot(): _begin_skillshot()
+	if _aiming or not pro_mode: return
+	if e is InputEventKey and e.pressed and not e.echo:
+		match e.keycode:
+			KEY_SPACE:
+				if _can_shoot(): _begin_skillshot()         # CHUTAR
+			KEY_A:
+				if _can_pass(): _begin_passaim()            # PASSAR (abre mira 360º)
+			KEY_S:
+				if _can_tackle(): _do_tackle()              # CARRINHO
+	elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_RIGHT:
+		if _can_pass(): _begin_passaim()                    # passe alternativo (botão dir.)
+
+## PASSE manual (Doc 4): mira LIVRE em 360º — a bola vai pra ONDE você apontar.
+## O companheiro mais próximo do ponto (menos o que passou) corre pra pegá-la; se
+## chegar antes do adversário, "recebe" sozinho (passe bem executado). Lane fechada
+## = pode ser interceptada (perde a posse). Passe NÃO pontua (salvo relíquia Maestro).
+func _manual_pass(aim: Vector2) -> void:
+	if not _can_pass(): return
+	# clampa o alvo dentro do campo (mas em qualquer direção a partir do portador)
+	var tgt := Vector2(clampf(aim.x, FIELD.position.x, FIELD.end.x), clampf(aim.y, FIELD.position.y, FIELD.end.y))
+	var to := tgt - carrier.global_position
+	if to.length() < 8.0: return
+	var long_ball := to.length() > 280.0
+	# passe pra TRÁS/LADO (não claramente pra frente) é PROTEGIDO: só o seu time
+	# recebe (o adversário não rouba). Pra frente continua contestável (mais difícil).
+	_pass_safe = to.x < 70.0
+	# força ∝ distância. Pra trás (protegido) sai mais SUAVE, pra parar perto do alvo
+	# e o recebedor dominar com precisão; pra frente sai com mais pace.
+	var pw := clampf(to.length() * (1.9 if _pass_safe else 2.4), 240.0, 980.0)
+	ball.kick(to, pw, 0.0, 0.0)
+	if _score: _score.action("lancamento" if long_ball else "passe")   # conta p/ jokers; chips só com Maestro
+	var mate := _best_mate_to(tgt)        # mais próximo do ALVO (não do portador)
+	if mate != null:
+		_pass_to = mate; _pass_t = 1.8     # ele corre pro ponto (recepção é "1º a chegar")
+		mate.apply_speed(1.45, 1.4)        # arranca pra buscar a bola (passe bem dado conecta)
+	_in_flight = true; carrier = null; _save_rolled = false
+
+## CARRINHO manual (Doc 4 §2.4): o seu jogador mais perto do portador desliza.
+func _do_tackle() -> void:
+	if not _can_tackle(): return
+	_execute_tackle(true)
+
+## Carrinho automático (modo Auto/Casual): quando o adversário tem a bola e há um
+## defensor no alcance com o cooldown zerado, desliza sozinho. Pedido do usuário.
+func _auto_tackle_step() -> void:
+	if pro_mode or over or _aiming or _tackle_cd > 0.0: return
+	if carrier == null or carrier.team != "away": return
+	var t := _closest_home_outfield_to(carrier)
+	if t == null or t.global_position.distance_to(carrier.global_position) > TACKLE_REACH: return
+	_execute_tackle(false)
+
+## Execução do carrinho: dá dano (salvo goleiro) e SOLTA a bola na direção do
+## carrinho (ela "escapa" pra frente — raramente fica no pé de quem deu).
+func _execute_tackle(manual: bool) -> void:
+	var target := carrier
+	if target == null: return
+	var tackler := _closest_home_outfield_to(target)
+	_tackle_cd = TACKLE_CD
+	if tackler == null or tackler.global_position.distance_to(target.global_position) > TACKLE_REACH:
+		if manual: _shake = maxf(_shake, 3.0)   # carrinho manual no vazio: gastou o cooldown
+		return
+	var dir := (target.global_position - tackler.global_position).normalized()
+	if dir.length() < 0.1: dir = Vector2(1, 0)
+	# avança o atacante pro contato (desliza) e bate
+	tackler.global_position = tackler.global_position.lerp(target.global_position, 0.6)
+	_shake = maxf(_shake, 6.0)
+	var des: float = tackler.stats.get("des", 1.0)
+	# o goleiro não toma dano (mas ainda perde a bola pro carrinho)
+	if target.role != "gk":
+		var knocked: bool = target.take_damage(20.0 * clampf(des, 0.6, 1.6))
+		_hit_burst(target.global_position, knocked)
+		if _score:
+			_score.action("nocaute" if knocked else "porrada")
+	# a bola é "cuspida" na direção do carrinho (pra frente do contato), virando sobra
+	ball.global_position = target.global_position
+	ball.kick(dir, randf_range(300.0, 460.0), 0.0, 0.0)
+	carrier = null
+	_in_flight = true
+	_save_rolled = false
+	_shot_live = false
+	_steal_cd = 0.35
+
+## Companheiro mais próximo de um ponto (exceto o passador/KO) — o provável recebedor
+## (mesmo conjunto destacado no overlay de passe; inclui o goleiro).
+func _best_mate_to(pos: Vector2) -> Player:
+	var best: Player = null
+	var bd := 1e9
+	for p in home:
+		if p == carrier or p.ko: continue
+		var d := p.global_position.distance_to(pos)
+		if d < bd: bd = d; best = p
+	return best
+
+## Jogador home de linha (não-goleiro) mais perto de um alvo — o que dá o carrinho.
+func _closest_home_outfield_to(target: Player) -> Player:
+	var best: Player = null
+	var bd := 1e9
+	for p in home:
+		if p.ko or p.role == "gk": continue
+		var d := p.global_position.distance_to(target.global_position)
+		if d < bd: bd = d; best = p
+	return best
 
 ## Anti cabo-de-guerra: se a bola fica num raio pequeno por mais de 3s (disputa
 ## parada, ninguém progride), alguém "ganha o bate-pé" e ela escapa do amontoado.
@@ -463,23 +671,10 @@ func _anti_deadlock(delta: float) -> void:
 ## (cooldown anti-abuso). Dano ∝ desarme; HP zera → nocaute (vítima sai ~6s). Porrada
 ## e nocaute pontuam pro jogador (chips). Carregador nocauteado → solta a bola.
 func _combat_step(_delta: float) -> void:
-	if carrier == null or _in_flight or carrier.ko: return
-	var opp := _closest_opp_to(carrier)
-	if opp == null or opp.ko: return
-	if opp.global_position.distance_to(carrier.global_position) >= 30.0 or opp.hit_cd > 0.0:
-		return
-	var aggro: float = opp.stats.get("des", 1.0)
-	if randf() < 0.025 * clampf(aggro, 0.5, 1.6):
-		opp.hit_cd = 1.8                       # anti-abuso: porrada espaçada (§6.4)
-		_shake = maxf(_shake, 5.0)
-		if opp.team == "home" and _score: _score.action("porrada")
-		var victim := carrier
-		var knocked: bool = victim.take_damage(22.0 * clampf(aggro, 0.6, 1.5))
-		_hit_burst(victim.global_position, knocked)
-		if knocked:
-			if opp.team == "home" and _score: _score.action("nocaute")
-			if carrier == victim:
-				carrier = null          # carregador nocauteado solta a bola (fica solta)
+	# DESATIVADO (pedido do usuário): nada de dano ambiente por disputar a bola.
+	# O dano agora vem SÓ de ações intencionais — super chute (_super_shot_hits) e
+	# carrinho manual (_do_tackle). O goleiro é imune a tudo (Player.take_damage).
+	return
 
 ## Estrela de impacto ("POW") no ponto da pancada — feedback visual do dano/nocaute.
 func _hit_burst(pos: Vector2, big: bool) -> void:
@@ -504,7 +699,7 @@ func _hit_burst(pos: Vector2, big: bool) -> void:
 func _super_shot_hits() -> void:
 	if _super_shot_live == "": return
 	for p in all:
-		if p.team == _super_shot_live or p.ko or p.hit_cd > 0.0: continue
+		if p.team == _super_shot_live or p.ko or p.hit_cd > 0.0 or p.role == "gk": continue
 		if p.global_position.distance_to(ball.global_position) < 17.0:
 			p.hit_cd = 0.5
 			var knocked: bool = p.take_damage(26.0)
@@ -574,6 +769,7 @@ func _gk_save() -> void:
 		elif ball.global_position.x > goal_x("home") - 70.0:
 			_save_rolled = true
 			_human_shot = false
+			_shot_live = false                   # resolvido na linha: vira lance normal (gol/sobra)
 			var dive_y: float = float(gk.get_meta("dive_y", MID.y))
 			var dfn: float = gk.stats.get("def", 1.0)
 			var reach := lerpf(40.0, 92.0, clampf((dfn - 0.6) / 0.9, 0.0, 1.0))
@@ -583,6 +779,7 @@ func _gk_save() -> void:
 				ball.velocity *= 0.04
 				ball.global_position = Vector2(goal_x("home") - 30.0, ball.global_position.y)
 				_set_carrier(gk)
+				_shot_live = false
 				_shake = maxf(_shake, 6.0)
 				_add_fury("away", "DEFEND"); _add_fury("home", "MISS")
 				if super_save:
@@ -603,6 +800,7 @@ func _gk_save() -> void:
 			if randf() < chance:
 				ball.velocity *= 0.04
 				_set_carrier(p)
+				_shot_live = false
 				_shake = maxf(_shake, 6.0)
 				_add_fury(def_side, "DEFEND")
 				_add_fury(shooter, "MISS")
@@ -616,6 +814,16 @@ func _closest_any() -> Player:
 	var best: Player = null
 	var bd := 1e9
 	for p in all:
+		if p.ko: continue
+		var d := p.global_position.distance_to(ball.global_position)
+		if d < bd: bd = d; best = p
+	return best
+
+## Jogador HOME mais próximo da bola (p/ recepção protegida de passe pra trás).
+func _closest_home_to_ball() -> Player:
+	var best: Player = null
+	var bd := 1e9
+	for p in home:
 		if p.ko: continue
 		var d := p.global_position.distance_to(ball.global_position)
 		if d < bd: bd = d; best = p
@@ -665,9 +873,11 @@ func _carrier_decide() -> void:
 	var dist := carrier.global_position.distance_to(goal_c)
 	var pressure := _nearest_opp_dist(carrier)
 
-	# CASUAL (piloto faz o press-your-luck): se a pressão apertou e a mão tem valor,
-	# BANCA agora em vez de arriscar o bust a zero (Doc 4 §3.2).
-	if carrier.team == "home" and not pro_mode and _pressao > LIMIAR_BOTE and _score != null and _score.chips >= 5:
+	# CASUAL (piloto faz o press-your-luck): pressão apertou na metade de ataque →
+	# BANCA agora (finalização + chance de gol) em vez de arriscar o bust a ZERO.
+	# (sem pontos de passe a mão fica ~0, então NÃO exige chips mínimos pra chutar)
+	if carrier.team == "home" and not pro_mode \
+			and ((_pressao > 0.3 and carrier.global_position.x > MID.x - 60.0) or _pressao > 0.45):
 		var is_super_c: bool = _super_ready["home"] and _super_kind("home") == "shot"
 		_home_shoot(Vector2(goal_x("home"), MID.y + randf_range(-70.0, 70.0)), randf_range(0.5, 0.9), is_super_c, false)
 		return
@@ -690,19 +900,17 @@ func _carrier_decide() -> void:
 		var noise := (1.6 - clampf(fin, 0.5, 1.5)) * 60.0
 		var aim := goal_c + Vector2(0, randf_range(-noise, noise))
 		ball.kick(aim - carrier.global_position, 780.0 + fin * 220.0, randf_range(-1.2, 1.2) * (1.4 - fin), 0.0)
-		_in_flight = true; carrier = null; _save_rolled = false
+		_in_flight = true; carrier = null; _save_rolled = false; _shot_live = true
 		_enter_climax()
 		return
-	# PASSE — mais frequente (tiki-taka): sob pressão sempre; senão, chance se há bom mate
+	# PASSE conservador: só pra um companheiro CLARAMENTE ABERTO (e de vez em quando).
+	# Tocar na marcação era o que mais bustava (interceptação) — agora DRIBLA rumo ao
+	# gol por padrão, o que mantém a posse viva e leva à finalização. (vale Casual e Pro)
 	var mate := _best_pass(carrier)
-	var pass_it := false
-	if pressure < PRESSURE:
-		pass_it = true
-	elif mate != null and randf() < 0.45:
-		pass_it = true
-	if pass_it and mate != null:
+	var mate_open: bool = mate != null and _nearest_opp_dist(mate) > 130.0
+	if mate_open and randf() < 0.25:
 		var lead := mate.velocity * 0.10
-		var aim := mate.global_position + lead + Vector2(randf_range(-22, 22), randf_range(-22, 22))  # margem de erro
+		var aim := mate.global_position + lead + Vector2(randf_range(-14, 14), randf_range(-14, 14))
 		var to := aim - carrier.global_position
 		ball.kick(to, clampf(to.length() * 2.0, 380.0, 820.0), 0.0, 0.0)
 		if carrier.team == "home" and _score:
@@ -710,7 +918,7 @@ func _carrier_decide() -> void:
 		_pass_to = mate; _pass_t = 1.4         # o companheiro corre pra receber → conecta
 		_in_flight = true; carrier = null; _save_rolled = false
 		return
-	# senão, segue driblando (o _carry_ball + o alvo rumo ao gol cuidam do resto);
+	# senão, segue driblando rumo ao gol (o _carry_ball + o alvo cuidam do resto);
 	# se travar cercado, a rede de segurança _anti_deadlock resolve em até 3s
 
 
@@ -819,6 +1027,7 @@ func _score_goal(team: String) -> void:
 	# PONTUAÇÃO (Doc 3): gol do jogador pontua (super gol vale mais) e fecha a "mão"
 	var was_super := _super_shot_live == team
 	if team == "home" and _score != null:
+		_goals_home += 1
 		# Doc 4 §2.3: a mão já foi bancada no chute; o GOL soma um BÔNUS por cima.
 		var bonus: int = _score.add_goal_bonus(was_super, _shot_mult)
 		_score_pop(bonus)
@@ -833,15 +1042,15 @@ func _score_goal(team: String) -> void:
 	_add_fury(team, "GOAL")
 	_add_fury("away" if team == "home" else "home", "CONCEDE")
 	_super_shot_live = ""
+	_shot_live = false
 	_goal_cd = 2.2
 	_shake = 16.0
 	ball.ball_time_scale = 1.0
 	_popup_goal()
 	if over:
 		return
-	await get_tree().create_timer(2.0).timeout
-	if not over:
-		_kickoff("home" if team == "away" else "away")
+	_kickoff_team = "home" if team == "away" else "away"
+	_kickoff_t = 2.0             # reinício agendado no _physics_process
 
 func _camera_juice(delta: float) -> void:
 	var spd := ball.speed()
@@ -893,8 +1102,8 @@ func _finish_by_target(won: bool) -> void:
 	var pts: int = _score.total if _score else 0
 	_goal_lbl.text = ("ALVO BATIDO!  %d / %d" % [pts, _target]) if won else ("FALHOU  %d / %d" % [pts, _target])
 	_goal_lbl.modulate = Color(1, 1, 1, 1)
-	await get_tree().create_timer(1.8).timeout
-	match_over.emit(won)
+	_endmatch_won = won
+	_endmatch_t = 1.8            # avisa o roteador pelo _physics_process (sem timer órfão)
 
 # ==========================================================================
 #  CAMPO / HUD
@@ -1032,7 +1241,7 @@ func _build_hud() -> void:
 	_hands_lbl = _chip("⚽×%d" % _hands_left, 14, UI.GOLD2)
 	sub.add_child(_hands_lbl)
 
-	# DOC 4 §4.4 — botão CHUTAR + toggle Auto/Manual (Casual×Pro, §3.2)
+	# DOC 4 §4.4 — botões distintos: PASSAR · CHUTAR (com a bola) · CARRINHO (defesa)
 	var bottom := HBoxContainer.new()
 	layer.add_child(bottom)
 	bottom.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
@@ -1040,9 +1249,15 @@ func _build_hud() -> void:
 	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
 	bottom.add_theme_constant_override("separation", 10)
 	bottom.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_pass_btn = UI.gold_btn("🎯 PASSAR  (A)", 16)
+	_pass_btn.pressed.connect(_press_pass)
+	bottom.add_child(_pass_btn)
 	_chutar_btn = UI.gold_btn("⚽ CHUTAR  (Espaço)", 18)
-	_chutar_btn.pressed.connect(_on_chutar_pressed)
+	_chutar_btn.pressed.connect(_press_shoot)
 	bottom.add_child(_chutar_btn)
+	_tackle_btn = UI.gold_btn("🦵 CARRINHO  (S)", 16)
+	_tackle_btn.pressed.connect(_press_tackle)
+	bottom.add_child(_tackle_btn)
 	_auto_btn = UI.gold_btn("Auto: " + ("OFF" if pro_mode else "ON"), 12)
 	_auto_btn.pressed.connect(_toggle_auto)
 	bottom.add_child(_auto_btn)
@@ -1171,7 +1386,7 @@ func _fire_super_shot(shooter: Player, side: String) -> void:
 		pot *= _next_shot_pot; _next_shot_pot = 1.0
 	ball.kick(aim - shooter.global_position, pot, randf_range(-0.7, 0.7), 0.0)
 	# (a finalização/banca do home já foi feita em _home_shoot antes de chamar aqui)
-	_in_flight = true; carrier = null; _save_rolled = false
+	_in_flight = true; carrier = null; _save_rolled = false; _shot_live = true
 	_enter_super_climax()
 	_play_cutin(side)
 
@@ -1399,9 +1614,18 @@ func _hud_update() -> void:
 	if _vignette != null:
 		var want: float = _pressao if _home_has_poss and not _in_flight else 0.0
 		_vignette.modulate.a = lerpf(_vignette.modulate.a, want, 0.15)
+	# botões distintos PASSAR · CHUTAR · CARRINHO (habilitam por contexto)
+	if _pass_btn != null:
+		_pass_btn.disabled = not _can_pass()
+		_pass_btn.modulate.a = 1.0 if _can_pass() else 0.4
 	if _chutar_btn != null:
 		_chutar_btn.disabled = not _can_shoot()
-		_chutar_btn.modulate.a = 1.0 if _can_shoot() else 0.45
+		_chutar_btn.modulate.a = 1.0 if _can_shoot() else 0.4
+	if _tackle_btn != null:
+		var defending: bool = carrier != null and carrier.team == "away"
+		_tackle_btn.text = "🦵 CARRINHO  (S)" if _tackle_cd <= 0.0 else "🦵 CARRINHO  %.0fs" % ceil(_tackle_cd)
+		_tackle_btn.disabled = not _can_tackle()
+		_tackle_btn.modulate.a = 1.0 if (_can_tackle() or defending) else 0.4
 	# indicador de posse: ponto colorido + nome do time com a bola
 	if poss == "home":
 		_poss_lbl.text = "● " + _home_name
