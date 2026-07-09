@@ -680,8 +680,8 @@ func _make_enemy_f(tier: String, f: float, rung_idx: int, boss_id: String = "") 
 	var debuff: String = pool[randi() % pool.size()]
 	var bump: int = {"normal": 6, "elite": 10, "boss": 16}.get(tier, 6)
 	return {"name": POOL[leader]["nome"], "crest": POOL[leader]["crest"], "leader": leader,
-		"stats": _scaled(POOL[leader]["stats"], ff), "squad": squad, "target": target,
-		"debuff": debuff, "concede_bump": bump}
+		"stats": _scaled(POOL[leader]["stats"], ff), "squad": squad, "squad_ids": ids,
+		"target": target, "debuff": debuff, "concede_bump": bump}
 
 ## Alvo de pontos por degrau (sobe ao subir a torre; o player também fica mais forte).
 func _target_for_rung(tier: String, r: int) -> int:

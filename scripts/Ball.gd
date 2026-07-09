@@ -17,6 +17,8 @@ var ball_time_scale := 1.0   # 1.0 normal · <1.0 câmera lenta DO chute (local)
 
 var _sprite: Sprite2D
 var _shadow: Node2D
+var _trail: Line2D
+var _base_scale := 1.0        # escala do sprite em repouso (guardada p/ o squash)
 
 signal bounced(strength: float, where: Vector2)
 
@@ -45,8 +47,22 @@ func _ready() -> void:
 	var tex := _load_ball_tex()
 	if tex != null:
 		_sprite.texture = tex
-		_sprite.scale = Vector2.ONE * (radius * 2.0 / float(maxi(1, tex.get_width())))
+		_base_scale = radius * 2.0 / float(maxi(1, tex.get_width()))
+		_sprite.scale = Vector2.ONE * _base_scale
 	add_child(_sprite)
+	# rastro (juice): pontos em coordenada de MUNDO, afinando e sumindo
+	_trail = Line2D.new()
+	_trail.top_level = true            # não herda o movimento da bola
+	_trail.width = radius * 1.3
+	_trail.width_curve = Curve.new()
+	_trail.width_curve.add_point(Vector2(0.0, 0.15))
+	_trail.width_curve.add_point(Vector2(1.0, 1.0))
+	var grad := Gradient.new()
+	grad.set_color(0, Color(1, 1, 1, 0.0))
+	grad.set_color(1, Color(1, 1, 0.85, 0.45))
+	_trail.gradient = grad
+	_trail.z_index = -1
+	add_child(_trail)
 
 func _load_ball_tex() -> Texture2D:
 	var p := "res://assets/ball.png"
@@ -114,3 +130,15 @@ func _physics_process(delta: float) -> void:
 	if _sprite:
 		_sprite.position = Vector2(0, -height)
 		_sprite.rotation += spd * 0.00018 * (delta * 60.0)
+		# SQUASH: bola rápida estica na direção do movimento (leitura de velocidade)
+		var st := clampf((spd - 420.0) / 900.0, 0.0, 0.42)
+		_sprite.scale = Vector2(_base_scale * (1.0 + st), _base_scale * (1.0 - st * 0.55))
+		_sprite.rotation = velocity.angle() if st > 0.02 else _sprite.rotation
+	if _trail:
+		# rastro só em bola veloz; parada, ele se recolhe
+		if spd > 460.0:
+			_trail.add_point(global_position + Vector2(0, -height))
+			if _trail.get_point_count() > 12: _trail.remove_point(0)
+		elif _trail.get_point_count() > 0:
+			_trail.remove_point(0)
+			if _trail.get_point_count() > 0: _trail.remove_point(0)

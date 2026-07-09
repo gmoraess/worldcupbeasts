@@ -7,6 +7,10 @@ extends Control
 signal shop_done
 signal organize_team
 
+const ConfettiFX = preload("res://scripts/fx/Confetti.gd")
+
+var _gold_shown := -1           # último ouro exibido (o ticker rola a partir dele)
+
 var main_offers: Array = []     # 5 itens {"kind","id"}; "sold" = já comprado
 var relic_off: Array = []       # 3 ids de relíquia
 var cons_off: Array = []        # 2 ids de consumível
@@ -56,7 +60,9 @@ func _build() -> void:
 	shelf.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	left.add_child(shelf)
 	for i in main_offers.size():
-		shelf.add_child(_main_card(i))
+		var mc := _main_card(i)
+		shelf.add_child(mc)
+		UI.pop_in(mc, i * 0.05)          # cartas assentam em cascata (Balatro)
 	left.add_child(UI.lbl("ELENCO  ·  cópias sobem o Tier (I→V)", 11, UI.RUNE2))
 	left.add_child(_roster_strip())
 
@@ -96,7 +102,12 @@ func _topbar() -> Control:
 	h.add_child(UI.clbl("🛒  LOJA", 24, UI.GOLD2))
 	var sp := Control.new(); sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(sp)
-	h.add_child(UI.clbl("🪙 %d" % GameState.gold, 22, UI.GOLD2))
+	if _gold_shown < 0: _gold_shown = GameState.gold
+	var gl := UI.clbl("🪙 %d" % _gold_shown, 22, UI.GOLD2)
+	gl.set_meta("cnt", _gold_shown)      # rola do valor anterior (a tela rebuilda)
+	UI.count_to(gl, GameState.gold, "🪙 ", "", 0.35)
+	_gold_shown = GameState.gold
+	h.add_child(gl)
 	var rc := reroll_cost()
 	var rr := UI.gold_btn("⟳ Reroll  🪙 %d" % rc, 14)
 	rr.disabled = GameState.gold < rc
@@ -283,6 +294,12 @@ func _show_pack_reveal(picks: Array) -> void:
 	add_child(lay)
 	var dim := UI.bg_rect(Color(0, 0, 0, 0.72))
 	lay.add_child(dim)
+	# 🎉 estouro de confete na abertura do pacote
+	Sfx.play("shimmer")
+	var vp := get_viewport_rect().size
+	ConfettiFX.burst(lay, Vector2(vp.x * 0.5, vp.y * 0.38), 90, 520.0)
+	ConfettiFX.burst(lay, Vector2(vp.x * 0.32, vp.y * 0.5), 40, 380.0)
+	ConfettiFX.burst(lay, Vector2(vp.x * 0.68, vp.y * 0.5), 40, 380.0)
 	var cc := CenterContainer.new()
 	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	lay.add_child(cc)
@@ -325,3 +342,5 @@ func _show_pack_reveal(picks: Array) -> void:
 		cv.add_child(UI.clbl(data["nome"], 12, UI.GOLD2))
 		cv.add_child(UI.clbl("%s · %s" % [GameState.RARITY[GameState.rarity(id)]["nome"], data["papel"]], 10, rcor))
 		row.add_child(card)
+		UI.hoverify(card)
+		UI.pop_in(card, row.get_child_count() * 0.09)   # revelação em cascata

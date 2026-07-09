@@ -9,6 +9,7 @@ const ScoreEngineLib = preload("res://scripts/match/ScoreEngine.gd")
 const MatchCardsLib = preload("res://scripts/match/MatchCards.gd")
 const SkillShotLib = preload("res://scripts/match/SkillShot.gd")
 const PassAimLib = preload("res://scripts/match/PassAim.gd")
+const ConfettiFX = preload("res://scripts/fx/Confetti.gd")
 
 signal match_over(home_won: bool)   # avisa o roteador quando a partida termina
 
@@ -191,6 +192,10 @@ func _build_team(team: String) -> void:
 		# capitã do jogador: nunca é nocauteada (não "cai" em campo)
 		if team == "home" and i < GameState.titulares.size():
 			p.is_captain = GameState.titulares[i] == GameState.capita
+			p.beast_id = GameState.titulares[i]     # liga o sprite animado (se a fera tiver)
+		elif team == "away":
+			var eids: Array = GameState.current_node.get("enemy", {}).get("squad_ids", [])
+			if i < eids.size(): p.beast_id = str(eids[i])
 		p.home_pos = Vector2(s[1], s[2])
 		p.global_position = p.home_pos
 		add_child(p)
@@ -378,6 +383,8 @@ func _home_shoot(aim: Vector2, power01: float, is_super: bool, by_human: bool) -
 	if carrier == null or carrier.team != "home": return
 	_shots_taken += 1
 	var shooter := carrier
+	shooter.play_action("kick")
+	Sfx.play("kick")
 	if _score: _score.action("finalizacao")         # o chute em si conta chips + jokers (matador)
 	_shot_mult = _score.effective_mult()
 	var gained: int = _score.finalizar_jogada()    # banca chips×mult AGORA (deu gol ou não)
@@ -577,6 +584,8 @@ func _manual_pass(aim: Vector2) -> void:
 	# força ∝ distância. Pra trás (protegido) sai mais SUAVE, pra parar perto do alvo
 	# e o recebedor dominar com precisão; pra frente sai com mais pace.
 	var pw := clampf(to.length() * (1.9 if _pass_safe else 2.4), 240.0, 980.0)
+	carrier.play_action("kick")
+	Sfx.play("pass")
 	ball.kick(to, pw, 0.0, 0.0)
 	if _score: _score.action("lancamento" if long_ball else "passe")   # conta p/ jokers; chips só com Maestro
 	var mate := _best_mate_to(tgt)        # mais próximo do ALVO (não do portador)
@@ -612,12 +621,15 @@ func _execute_tackle(manual: bool) -> void:
 	var dir := (target.global_position - tackler.global_position).normalized()
 	if dir.length() < 0.1: dir = Vector2(1, 0)
 	# avança o atacante pro contato (desliza) e bate
+	tackler.play_action("slide")
+	Sfx.play("tackle")
 	tackler.global_position = tackler.global_position.lerp(target.global_position, 0.6)
 	_shake = maxf(_shake, 6.0)
 	var des: float = tackler.stats.get("des", 1.0)
 	# o goleiro não toma dano (mas ainda perde a bola pro carrinho)
 	if target.role != "gk":
 		var knocked: bool = target.take_damage(20.0 * clampf(des, 0.6, 1.6))
+		if knocked: Sfx.play("ko")
 		_hit_burst(target.global_position, knocked)
 		if _score:
 			_score.action("nocaute" if knocked else "porrada")
@@ -899,6 +911,8 @@ func _carrier_decide() -> void:
 		var fin: float = carrier.stats.get("fin", 1.0)
 		var noise := (1.6 - clampf(fin, 0.5, 1.5)) * 60.0
 		var aim := goal_c + Vector2(0, randf_range(-noise, noise))
+		carrier.play_action("kick")
+		Sfx.play("kick", 0.7)
 		ball.kick(aim - carrier.global_position, 780.0 + fin * 220.0, randf_range(-1.2, 1.2) * (1.4 - fin), 0.0)
 		_in_flight = true; carrier = null; _save_rolled = false; _shot_live = true
 		_enter_climax()
@@ -912,6 +926,8 @@ func _carrier_decide() -> void:
 		var lead := mate.velocity * 0.10
 		var aim := mate.global_position + lead + Vector2(randf_range(-14, 14), randf_range(-14, 14))
 		var to := aim - carrier.global_position
+		carrier.play_action("kick")
+		Sfx.play("pass", 0.7)
 		ball.kick(to, clampf(to.length() * 2.0, 380.0, 820.0), 0.0, 0.0)
 		if carrier.team == "home" and _score:
 			_score.action("lancamento" if to.length() > 280.0 else "passe")
@@ -1046,11 +1062,36 @@ func _score_goal(team: String) -> void:
 	_goal_cd = 2.2
 	_shake = 16.0
 	ball.ball_time_scale = 1.0
+	if team == "home":
+		_goal_blast()            # festa: confete + flash + soco de zoom
+		Sfx.play("goal")
+	else:
+		Sfx.play("ko", 0.8)      # gol sofrido: baque, não fanfarra
 	_popup_goal()
 	if over:
 		return
 	_kickoff_team = "home" if team == "away" else "away"
 	_kickoff_t = 2.0             # reinício agendado no _physics_process
+
+## Explosão de GOL (juice aprovado): confete na boca do gol + na bola, flash
+## branco curto e um "soco" de zoom. Tweens presos ao Match — morrem com ele.
+func _goal_blast() -> void:
+	ConfettiFX.burst(self, Vector2(goal_x("home"), MID.y), 90, 520.0)
+	ConfettiFX.burst(self, ball.global_position, 40, 380.0)
+	var lay := CanvasLayer.new()
+	lay.layer = 90
+	add_child(lay)
+	var f := ColorRect.new()
+	f.color = Color(1, 1, 1, 0.45)
+	f.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lay.add_child(f)
+	f.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var tw := create_tween()
+	tw.tween_property(f, "color:a", 0.0, 0.28)
+	tw.tween_callback(lay.queue_free)
+	var tz := create_tween()
+	tz.tween_property(cam, "zoom", Vector2(1.14, 1.14), 0.10).set_trans(Tween.TRANS_SINE)
+	tz.tween_property(cam, "zoom", Vector2.ONE, 0.45).set_trans(Tween.TRANS_SINE)
 
 func _camera_juice(delta: float) -> void:
 	var spd := ball.speed()
@@ -1384,6 +1425,8 @@ func _fire_super_shot(shooter: Player, side: String) -> void:
 	var pot := 1320.0
 	if side == "home":
 		pot *= _next_shot_pot; _next_shot_pot = 1.0
+	shooter.play_action("kick")
+	Sfx.play("kick")
 	ball.kick(aim - shooter.global_position, pot, randf_range(-0.7, 0.7), 0.0)
 	# (a finalização/banca do home já foi feita em _home_shoot antes de chamar aqui)
 	_in_flight = true; carrier = null; _save_rolled = false; _shot_live = true
@@ -1580,7 +1623,7 @@ func _popup_goal() -> void:
 func _hud_update() -> void:
 	# PONTUAÇÃO Balatro (Doc 3): total na placa, progresso até o alvo, chips×mult
 	if _score != null:
-		_score_lbl.text = str(_score.total)
+		UI.count_to(_score_lbl, _score.total, "", "", 0.3)   # ticker (Balatro)
 		_prog.value = mini(_score.total, _target)
 		_target_lbl.text = "ALVO  %d / %d" % [_score.total, _target]
 		_chips_lbl.text = "🎰 %d × %.1f" % [_score.chips, _score.mult]

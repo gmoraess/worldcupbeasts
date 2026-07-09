@@ -14,12 +14,30 @@ const TowerScreen = preload("res://scripts/TowerScreen.gd")
 const MatchScene = preload("res://scenes/Match.tscn")
 
 var current: Node = null
+var _fade: ColorRect              # véu do fade entre telas (juice aprovado)
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	randomize()
 	Settings.apply_all()         # aplica opções salvas (tela cheia, vsync, volumes)
+	# véu de transição: acima de tudo, ignora mouse
+	var lay := CanvasLayer.new()
+	lay.layer = 120
+	add_child(lay)
+	_fade = ColorRect.new()
+	_fade.color = Color(0, 0, 0, 0.0)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lay.add_child(_fade)
+	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	Sfx.music_start()            # loop chiptune (bus Music — slider nas Configurações)
 	_show_title()
+
+## Fade-in rápido (~0.15s) — cobre o corte seco na troca de tela.
+func _fade_in() -> void:
+	if _fade == null: return
+	_fade.color.a = 1.0
+	var tw := create_tween()
+	tw.tween_property(_fade, "color:a", 0.0, 0.15)
 
 # --- TELA INICIAL / MENU ---
 func _show_title() -> void:
@@ -54,6 +72,7 @@ func _switch(node: Node, sigs: Dictionary) -> void:
 	add_child(node)
 	for s in sigs:
 		node.connect(s, sigs[s])
+	_fade_in()
 
 func _show_beast_select() -> void:
 	_switch(BeastSelect.new(), {"beast_selected": _on_beast})
@@ -109,6 +128,7 @@ func _msg(title: String, sub: String, cont: Callable, good: bool) -> void:
 	current = Control.new()
 	current.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(current)
+	_fade_in()
 	current.add_child(UI.bg_rect())
 	var cc := CenterContainer.new()
 	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

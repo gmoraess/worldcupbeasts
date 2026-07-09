@@ -7,6 +7,8 @@ extends Control
 
 signal reward_done
 
+const ConfettiFX = preload("res://scripts/fx/Confetti.gd")
+
 var stage := "choose"     # "choose" | "pack" | "relic"
 var options: Array = []   # ids revelados no sub-passo
 
@@ -39,6 +41,8 @@ func _build_choose(col: VBoxContainer) -> void:
 	row.add_child(_opt("🎴", "Pacote de\nfigurinhas", "Revela 3 feras,\nvocê escolhe 1", func(): stage = "pack"; options = GameState.open_pack(3); _build()))
 	row.add_child(_opt("🛡", "Relíquia", "Escolhe 1\nde 3 relíquias", func(): stage = "relic"; options = GameState.random_relic_choices(3); _build()))
 	row.add_child(_opt("🃏", "3 Cartas", "Ganha 3 cartas\nconsumíveis", _grant_cards))
+	for i in row.get_child_count():
+		UI.pop_in(row.get_child(i), i * 0.09)
 
 func _opt(ic: String, titulo: String, desc: String, cb: Callable) -> Control:
 	var b := Button.new()
@@ -46,6 +50,7 @@ func _opt(ic: String, titulo: String, desc: String, cb: Callable) -> Control:
 	b.add_theme_stylebox_override("normal", UI.sbf(UI.PANEL, UI.BRONZE, 2, 12, 10, 10))
 	b.add_theme_stylebox_override("hover", UI.sbf(UI.PANEL2, UI.GOLD2, 2, 12, 10, 10))
 	b.pressed.connect(cb)
+	UI.hoverify(b)
 	var v := VBoxContainer.new()
 	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -63,6 +68,12 @@ func _grant_cards() -> void:
 	reward_done.emit()
 
 func _build_pack(col: VBoxContainer) -> void:
+	# 🎉 confete na revelação do pacote
+	Sfx.play("shimmer")
+	var vp := get_viewport_rect().size
+	ConfettiFX.burst(self, Vector2(vp.x * 0.5, vp.y * 0.36), 90, 520.0)
+	ConfettiFX.burst(self, Vector2(vp.x * 0.34, vp.y * 0.52), 40, 380.0)
+	ConfettiFX.burst(self, Vector2(vp.x * 0.66, vp.y * 0.52), 40, 380.0)
 	col.add_child(UI.clbl("✨ Escolha 1 fera pro elenco", 24, UI.GOLD2))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
@@ -87,6 +98,8 @@ func _build_pack(col: VBoxContainer) -> void:
 		v.add_child(UI.clbl("%s · %s" % [GameState.RARITY[GameState.rarity(id)]["nome"], data["papel"]], 11, rcor))
 		b.add_child(v)
 		row.add_child(b)
+		UI.hoverify(b)
+		UI.pop_in(b, row.get_child_count() * 0.09)
 
 func _build_relic(col: VBoxContainer) -> void:
 	col.add_child(UI.clbl("🛡 Escolha 1 relíquia", 24, UI.GOLD2))
@@ -114,3 +127,5 @@ func _build_relic(col: VBoxContainer) -> void:
 		v.add_child(d)
 		b.add_child(v)
 		row.add_child(b)
+		UI.hoverify(b)
+		UI.pop_in(b, row.get_child_count() * 0.09)

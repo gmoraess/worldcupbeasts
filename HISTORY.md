@@ -67,11 +67,35 @@ Troca de "1 fera = time" por **time de 5** de um **pool compartilhado de 15** (o
 - **Mapa mais amplo (estilo Slay the Spire)** ✅ — **7 colunas/ato** (entrada → 2 caminhos → 🎁 **TESOURO** → caminho → pré-chefe → chefe), com movimento por raias vizinhas. A **coluna do tesouro é toda de baús** → todo caminho passa por 1 baú garantido.
 - **Cartas de pontuação → "próxima jogada"** ✅ — em vez de mexer na posse atual (dependia do timing), agendam o bônus pra **próxima posse** (`ScoreEngine.queue_next` aplicado em `start_possession`). Valores reforçados (Festival ×3, Jackpot +100, etc.).
 
+### Doc 4 — O Verbo da Partida ✅ (press-your-luck + agência real)
+**O jogador agora JOGA a partida** (não só assiste): chutar **banca** a mão (chips×mult) na hora; perder a bola sem chutar = **bust a zero**; gol soma bônus por cima com o mult capturado no chute. Partida limitada a **12 mãos**.
+- **Chute de perícia** ✅ — pausa + mira na boca do gol com **tell do goleiro** (mire longe de onde ele vai mergulhar), força pelo arraste, zona de perdão ∝ finalização. Atributo `fin` = precisão E potência (piso 900, sem "chute mole" perseguível — `_shot_live`: só o goleiro resolve bola chutada).
+- **Passe manual 360º** ✅ — botão próprio (A / botão direito), **pausa com overlay** destacando aliados; o mais próximo do ALVO corre pra receber; passe pra trás/lado é **protegido** (só seu time recebe) e mais suave. **Passe não pontua** (anti toca-toca infinito) — salvo relíquia Maestro.
+- **Carrinho** ✅ — botão próprio (S), cooldown 3,2s, dano ∝ desarme, e a bola é **cuspida na direção do carrinho** (vira sobra, raramente fica). No modo Auto o carrinho também sai sozinho.
+- **Modelo de dano fechado** ✅ — dano SÓ de super-chute e carrinho (combate ambiente desligado); **goleiro imune a tudo**; **capitã nunca é nocauteada** (game over por KO da capitã era frustrante — removido).
+- **IA anti-bust** ✅ — telemetria mostrou 13,6 busts/partida (toca-toca da IA); IA agora **dribla por padrão** e só passa a mate claramente aberto → chutes 1,4→3,8/partida, mãos zeradas 47%→9%.
+- **Balanço por simulação** ✅ — passivas de capitã refeitas pro modelo Doc 4 (amplitude 649→~31 pts); alvos por degrau recalibrados.
+
+### Torre estilo Mortal Kombat + tela inicial/save ✅ (substitui o mapa)
+**O mapa StS saiu; entrou a TORRE** (ladder de oponentes visível, você sobe degrau a degrau).
+- **3 dificuldades** com winrate verificado por simulação (1º oponente, IA casual): **Fácil** 5 degraus ~67% · **Normal** 7 ~57% · **Hardcore** 9 ~37% (separação por força do inimigo × multiplicador de alvo 0,72/1,0/1,28).
+- **Fluxo:** título → capitã → dificuldade (mostrando a torre inteira de cada uma) → **recompensa inicial** (1 pacote OU 1 relíquia OU 3 cartas) → torre (animação de subida + oponente em highlight) → partida → loja com "Organizar Time" → sobe → ... → boss no topo = Copa. "Repescagem" virou **Vida Extra**.
+- **Tela inicial** ✅ — banner de retratos, Jogar / **Continuar** (save JSON em `user://wcb_save.json`, auto-save na torre) / Configurações (fullscreen, vsync, volumes em `user://settings.cfg`) / Sair.
+- **Partida começa no modo Auto** (Pro é opt-in pelo botão).
+- **Crash fix (lição reusável):** o jogo fechava ao avançar de partida — `await create_timer` disparando em nó já liberado (segfault sem SCRIPT ERROR). **Nunca usar `await create_timer` pra auto-mutação em nó que pode ser liberado**; virou contadores no `_physics_process`. Regressão coberta por `tests/test_loop.gd`.
+
+### Arte pixel + juice + áudio ✅ (tudo procedural, gerado por código)
+- **15 feras animadas em campo** — spritesheets pixel-art 32×32 (idle 4 / corrida 6 / chute 4 / carrinho 4) **gerados por script Python** (PNG escrito byte a byte, sem dependências), 5 arquétipos paramétricos: quadrúpede (lobos/felinos/tanques com juba/chifre/tromba/placas/listras/pintas), ave (galo Foot, arara), brutamontes (gorila anda nos nós dos dedos e SOCA), inseto (escorpião com bote de ferrão, mantis raptorial) e serpente (quetzal ondula). `Player.gd` troca o disco por `AnimatedSprite2D` (nearest, flip pela direção, velocidade da animação ∝ movimento, sombra no lugar do anel); **time inimigo também animado** (`squad_ids` no inimigo); elite 1,7× e boss 1,85× de presença.
+- **Juice de partida** — bola com **squash + rastro** em chute forte; **explosão de GOL** (confete + flash branco + soco de zoom — só em gol SEU; sofrido dá baque grave); **confete** ao abrir pacotes (loja e recompensa inicial). `scripts/fx/Confetti.gd` (sem timers órfãos).
+- **Juice de UI (Balatro)** — cartas/recompensas assentam com **pop elástico em cascata**; botões com mini-pop no hover; **ticker** de pontos (partida) e ouro (loja) rolando número a número; **fade ~0,15s** entre telas.
+- **Áudio 100% procedural** — 8 SFX chiptune gerados por script (chute, passe, carrinho, gol-fanfarra, pop, click automático em TODO botão, shimmer de pacote, nocaute) com variação de pitch, + **loop musical chiptune** (140 BPM, Am–F–C–G, 13,7s de loop limpo). Autoload `Sfx` cria os buses Music/Sfx que os sliders das Configurações já controlavam.
+
 ### Notas / pendências
 - **Polimento de Etapa 1 (feel):** movimento off-ball / steering pra criar linhas de passe e diminuir o aglomerado (a trava anti cabo-de-guerra resolve o teto, não a frequência). Melhor com playtest visual.
 
 ### 📍 ESTADO ATUAL (onde paramos)
-**Os 3 documentos (GDD física, SPEC squad/supers/HUD, Doc 3 Balatro) estão implementados.** O jogo roda uma corrida completa: escolher capitã → pacote de figurinhas → mapa de 3 atos (7 colunas, baú garantido) → partidas com pontuação Balatro (chips×mult, alvo, jokers, combate/HP, cartas, blinds) → recompensas mistas (relíquia/joker/gear) e loja → chefe → Copa.
-- **Build/rodar:** Godot 4.6.3 (não está no PATH; binário em `C:\Users\Chess\Downloads\Godot_v4.6.3-stable_win64.exe\...console.exe`). Cena principal `scenes/Main.tscn`. Testes headless: `tests/test_flow.gd` (smoke do fluxo) e `tests/test_balance.gd` (balanço — rodar com `--fixed-fps 60`).
-- **Pendências/“watches”:** áudio e arte definitiva (PNGs atuais são paliativos do projeto antigo); afinar no playtest a punição de boss (+60/gol) e a dificuldade dos alvos; polimento de steering (aglomeração).
-- **Próximos candidatos:** áudio · arte definitiva · mais conteúdo (feras/jokers/eventos) · tiers de controle (modo Pro).
+**Os 4 documentos (GDD física, SPEC squad/supers/HUD, Doc 3 Balatro, Doc 4 Verbo) estão implementados + torre MK + arte/juice/áudio procedurais.** O jogo roda: título (save/continuar) → capitã → dificuldade → recompensa inicial → torre → partidas Doc 4 (bancar a mão, chute de perícia, passe 360º, carrinho) com feras pixel-art animadas, confete, música e SFX → loja/organizar time → boss no topo = Copa.
+- **Build/rodar:** Godot 4.6.3 (não está no PATH; binário em `C:\Users\Chess\Downloads\Godot_v4.6.3-stable_win64.exe\...console.exe`). Cena principal `scenes/Main.tscn`. Testes headless: `tests/test_flow.gd` (smoke), `tests/test_loop.gd` (regressão do crash), `tests/test_balance.gd` (balanço — `--fixed-fps 60`, aceita `K= LEN= ALVO= EF=`).
+- **Geradores procedurais** (scratchpad da sessão; regeneráveis): pixel art das feras (`gen_beasts.py`, arquétipos paramétricos) e áudio (`gen_sfx.py`) — saídas commitadas em `assets/beasts/anim/` e `assets/sfx/`.
+- **Pendências/"watches":** afinar dificuldade/capitãs no modo Pro com playtest; steering (aglomeração); arte definitiva se quiser além do estilo procedural.
+- **Próximos candidatos:** mais conteúdo (feras/jokers/eventos) · polimento do modo Pro · arte/música definitivas.
