@@ -9,7 +9,7 @@ const TIER_COR := {"partida": Color("3aa83a"), "elite": Color("c83a3a"), "boss":
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(UI.bg_rect())
+	add_child(UI.stone_bg())
 	var root := MarginContainer.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for s in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:

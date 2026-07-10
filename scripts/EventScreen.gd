@@ -16,7 +16,7 @@ const EVENTS := [
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(UI.bg_rect())
+	add_child(UI.stone_bg())
 	var ev: Dictionary = EVENTS[randi() % EVENTS.size()]
 	var cc := CenterContainer.new()
 	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

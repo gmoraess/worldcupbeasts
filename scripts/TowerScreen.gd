@@ -12,7 +12,7 @@ var _fight_btn: Button = null
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(UI.bg_rect())
+	add_child(UI.stone_bg())
 	var root := MarginContainer.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for s in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:

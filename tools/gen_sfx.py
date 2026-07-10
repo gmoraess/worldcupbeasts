@@ -144,6 +144,200 @@ def sfx_ko():         # nocaute: baque pesado
     return s
 
 
+# ------------------------------------------------------- TORCIDA (vocal)
+def vowel(f0, f1, dur, amp=1.0, nvoices=6, breath=0.25):
+    """Cluster de 'vozes' detunadas deslizando f0→f1 — torcida vocalizando.
+    Envelope de sino (entra e sai suave). breath = camada de ruído junto."""
+    n = int(dur * SR)
+    out = [0.0] * n
+    for _ in range(nvoices):
+        det = 1.0 + random.uniform(-0.045, 0.045)
+        ph1 = ph2 = ph3 = 0.0
+        for i in range(n):
+            t = i / n
+            f = (f0 + (f1 - f0) * t) * det
+            ph1 += math.tau * f / SR
+            ph2 += math.tau * f * 2.02 / SR
+            ph3 += math.tau * f * 3.03 / SR
+            env = math.sin(math.pi * min(1.0, t * 1.12)) ** 1.4
+            out[i] += (math.sin(ph1) + 0.45 * math.sin(ph2) + 0.2 * math.sin(ph3)) \
+                * amp * env / nvoices
+    if breath > 0.0:
+        y = 0.0
+        for i in range(n):
+            t = i / n
+            y += 0.22 * (random.uniform(-1, 1) - y)
+            out[i] += y * breath * math.sin(math.pi * min(1.0, t * 1.12))
+    return out
+
+
+def sfx_crowd_goal():     # URRO de gol: rugido de estádio + palmas
+    n = int(2.1 * SR)
+    s = [0.0] * n
+    y = 0.0
+    for i in range(n):
+        t = i / n
+        atk = min(1.0, t * 9.0)                       # ataque rápido
+        rel = math.exp(-2.2 * max(0.0, t - 0.25))     # decai devagar
+        lp = 0.18 + 0.4 * atk                         # abre o filtro no pico
+        y += lp * (random.uniform(-1, 1) - y)
+        s[i] = y * atk * rel
+    add(s, vowel(240, 300, 0.9, 0.5, 8), 0.05)        # "ÊÊÊ" por baixo
+    for k in range(46):                                # salva de palmas
+        at = 0.15 + random.random() * 1.4
+        add(s, noise_burst(0.018, 0.35 * (1.0 - at / 2.2), 70.0, 0.85), at)
+    return s
+
+
+def sfx_crowd_ooh():      # "ôôô" — chute defendido/na trave
+    return vowel(320, 195, 0.95, 0.9, 7, 0.3)
+
+
+def sfx_crowd_sad():      # "aaah" murcho — gol sofrido
+    return vowel(300, 140, 1.35, 0.8, 7, 0.35)
+
+
+def sfx_crowd_uuh():      # "uuuh" crescente — pressão subindo
+    return vowel(170, 330, 1.1, 0.85, 7, 0.3)
+
+
+def sfx_crowd_applause():  # aplausos (defesa do nosso goleiro)
+    s = silence(1.3)
+    for k in range(70):
+        at = random.random() ** 1.4 * 1.1
+        add(s, noise_burst(0.016, 0.5 * (1.0 - at / 1.5), 80.0, 0.9), at)
+    return s
+
+
+def sfx_crowd_ola():      # swoosh da ola dando a volta
+    n = int(1.6 * SR)
+    s = [0.0] * n
+    y = 0.0
+    for i in range(n):
+        t = i / n
+        lp = 0.1 + 0.5 * math.sin(math.pi * t)        # filtro varre e volta
+        y += lp * (random.uniform(-1, 1) - y)
+        s[i] = y * math.sin(math.pi * t)
+    add(s, vowel(200, 290, 1.2, 0.35, 6), 0.15)
+    return s
+
+
+def sfx_crowd_loop():     # murmúrio contínuo do estádio (loop ~8s)
+    dur = 8.0
+    n = int(dur * SR)
+    s = [0.0] * n
+    y = 0.0
+    for i in range(n):
+        t = i / dur                                    # em segundos/dur → ciclos exatos
+        # 2 LFOs com nº INTEIRO de ciclos no loop → emenda sem pulo
+        lfo = 0.72 + 0.18 * math.sin(math.tau * 2 * t) + 0.10 * math.sin(math.tau * 5 * t)
+        y += 0.08 * (random.uniform(-1, 1) - y)        # ruído bem fechado (grave)
+        s[i] = y * lfo
+    return s
+
+
+# ------------------------------------------------------- APITO DO JUIZ
+def _whistle_blast(dur, amp=1.0):
+    n = int(dur * SR)
+    out = []
+    ph = 0.0
+    for i in range(n):
+        t = i / n
+        trill = 0.62 + 0.38 * math.sin(math.tau * 41.0 * i / SR)   # trinado da bolinha
+        env = min(1.0, t * 22.0) * (1.0 if t < 0.82 else math.exp(-(t - 0.82) * 26.0))
+        ph += math.tau * (2350.0 + 40.0 * math.sin(math.tau * 6.0 * t)) / SR
+        out.append((math.sin(ph) + 0.3 * math.sin(ph * 1.5)) * trill * env * amp)
+    return out
+
+
+def sfx_whistle():        # apito curto (início de partida / gol)
+    return _whistle_blast(0.42)
+
+
+def sfx_whistle_end():    # apito final: pi! pi! piiiiii!
+    s = silence(0.02)
+    add(s, _whistle_blast(0.22), 0.0)
+    add(s, _whistle_blast(0.22), 0.34)
+    add(s, _whistle_blast(0.75), 0.68)
+    return s
+
+
+# ------------------------------------------------------- POWER-UPS / CARTAS
+def sfx_explosion():      # 💣 bomba: BOOM com estilhaço
+    s = sine_sweep(140, 28, 0.55, 1.0, 5.0)
+    add(s, noise_burst(0.4, 0.9, 7.0, 0.3))
+    add(s, noise_burst(0.12, 0.7, 22.0, 0.7), 0.02)   # crack inicial
+    return s
+
+
+def sfx_zap():            # ⚡ raio: zumbido elétrico serrilhado
+    s = []
+    n = int(0.38 * SR)
+    ph = 0.0
+    for i in range(n):
+        t = i / n
+        f = 1400.0 - 700.0 * t + random.uniform(-160, 160)   # jitter = faísca
+        ph = (ph + f / SR) % 1.0
+        v = 1.0 if ph < 0.5 else -1.0
+        s.append(v * 0.8 * math.exp(-4.5 * t))
+    add(s, noise_burst(0.1, 0.4, 30.0, 0.95))
+    return s
+
+
+def sfx_magnet():         # 🧲 ímã: hum subindo com wobble
+    s = []
+    n = int(0.45 * SR)
+    ph = 0.0
+    for i in range(n):
+        t = i / n
+        f = 190.0 + 420.0 * t + 34.0 * math.sin(math.tau * 13.0 * t)
+        ph += math.tau * f / SR
+        s.append((math.sin(ph) + 0.4 * math.sin(ph * 2.0)) * 0.7 * math.sin(math.pi * t))
+    return s
+
+
+def sfx_golden():         # 👟 chuteira de ouro: ding-ding nobre
+    s = bell(1318.5, 0.3, 0.7, 7.0)                    # E6
+    add(s, bell(1975.5, 0.5, 0.6, 6.0), 0.11)          # B6
+    return s
+
+
+def sfx_powerup():        # item aparece: sparkle convidativo
+    s = sine_sweep(500, 1100, 0.12, 0.5, 6.0)
+    add(s, bell(1567.98, 0.3, 0.4, 8.0), 0.06)
+    return s
+
+
+def sfx_slip():           # 🍌 escorregão: slide-whistle + tombo
+    s = []
+    n = int(0.32 * SR)
+    ph = 0.0
+    for i in range(n):
+        t = i / n
+        ph += math.tau * (950.0 - 620.0 * t) / SR
+        s.append(math.sin(ph) * 0.7 * (1.0 - t * 0.4))
+    add(s, sine_sweep(110, 40, 0.16, 0.9, 10.0), 0.3)
+    add(s, noise_burst(0.05, 0.5, 30.0, 0.6), 0.3)
+    return s
+
+
+def sfx_web():            # 🕸 teia: splat grudento
+    s = noise_burst(0.16, 0.9, 16.0, 0.35)
+    add(s, sine_sweep(600, 180, 0.18, 0.5, 9.0), 0.01)
+    return s
+
+
+def sfx_throw():          # arremesso: whoosh
+    s = []
+    n = int(0.34 * SR)
+    y = 0.0
+    for i in range(n):
+        t = i / n
+        y += (0.2 + 0.55 * t) * (random.uniform(-1, 1) - y)
+        s.append(y * 0.8 * math.sin(math.pi * t) ** 0.7)
+    return s
+
+
 # ------------------------------------------------------------------ MÚSICA
 # 140 BPM · 8 compassos · Am F C G (2 compassos cada) · loop perfeito
 def music():
@@ -192,7 +386,20 @@ def music():
 OUT = {
     'kick': (sfx_kick, 0.85), 'pass': (sfx_pass, 0.7), 'tackle': (sfx_tackle, 0.85),
     'goal': (sfx_goal, 0.8), 'pop': (sfx_pop, 0.7), 'click': (sfx_click, 0.5),
-    'shimmer': (sfx_shimmer, 0.7), 'ko': (sfx_ko, 0.9), 'music_loop': (music, 0.7),
+    'shimmer': (sfx_shimmer, 0.7), 'ko': (sfx_ko, 0.9),
+    # torcida
+    'crowd_goal': (sfx_crowd_goal, 0.85), 'crowd_ooh': (sfx_crowd_ooh, 0.7),
+    'crowd_sad': (sfx_crowd_sad, 0.65), 'crowd_uuh': (sfx_crowd_uuh, 0.7),
+    'crowd_applause': (sfx_crowd_applause, 0.7), 'crowd_ola': (sfx_crowd_ola, 0.55),
+    'crowd_loop': (sfx_crowd_loop, 0.5),
+    # juiz
+    'whistle': (sfx_whistle, 0.6), 'whistle_end': (sfx_whistle_end, 0.6),
+    # power-ups / cartas
+    'explosion': (sfx_explosion, 0.95), 'zap': (sfx_zap, 0.75),
+    'magnet': (sfx_magnet, 0.7), 'golden': (sfx_golden, 0.75),
+    'powerup': (sfx_powerup, 0.7), 'slip': (sfx_slip, 0.75),
+    'web': (sfx_web, 0.75), 'throw': (sfx_throw, 0.7),
+    # music_loop saiu daqui: as faixas agora vivem em tools/gen_music.py
 }
 
 if __name__ == '__main__':

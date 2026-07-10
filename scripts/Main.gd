@@ -29,7 +29,7 @@ func _ready() -> void:
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	lay.add_child(_fade)
 	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	Sfx.music_start()            # loop chiptune (bus Music — slider nas Configurações)
+	Sfx.music_menu()             # tema de menu (bus Music — slider nas Configurações)
 	_show_title()
 
 ## Fade-in rápido (~0.15s) — cobre o corte seco na troca de tela.
@@ -73,6 +73,10 @@ func _switch(node: Node, sigs: Dictionary) -> void:
 	for s in sigs:
 		node.connect(s, sigs[s])
 	_fade_in()
+	# telas de menu (Control) voltam pro tema de menu; a partida (Node2D)
+	# escolhe a própria faixa no _ready dela (match A/B, clímax)
+	if node is Control:
+		Sfx.music_menu()
 
 func _show_beast_select() -> void:
 	_switch(BeastSelect.new(), {"beast_selected": _on_beast})
@@ -129,7 +133,8 @@ func _msg(title: String, sub: String, cont: Callable, good: bool) -> void:
 	current.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(current)
 	_fade_in()
-	current.add_child(UI.bg_rect())
+	Sfx.music_menu()
+	current.add_child(UI.stone_bg())
 	var cc := CenterContainer.new()
 	cc.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	current.add_child(cc)

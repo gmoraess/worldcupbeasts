@@ -8,3 +8,7 @@
 
 # Logs gerados pelos testes de balanceamento (artefatos volumosos)
 tests/balance_*.txt
+
+# Logs de execução (testes headless via --log-file e sessões de jogo)
+/test_run.log
+/game_run.log

@@ -34,6 +34,13 @@ const POOL := {
 		"desc": "Próxima jogada: +2 mult e +40 chips", "efeito": {"add_mult": 2.0, "chips": 40}},
 	"jackpot": {"nome": "Jackpot", "ic": "💰", "tipo": "pontuacao", "alvo": "pontuacao",
 		"desc": "Próxima jogada: +100 chips", "efeito": {"chips": 100}},
+	# — arremessáveis (clica na carta e MIRA um ponto do campo) —
+	"bomba_mao": {"nome": "Bomba", "ic": "💣", "tipo": "fisica", "alvo": "arremesso",
+		"desc": "Arremessa: explosão derruba inimigos na área", "efeito": {"arremesso": "bomba"}},
+	"banana": {"nome": "Casca de Banana", "ic": "🍌", "tipo": "fisica", "alvo": "arremesso",
+		"desc": "Arremessa: o 1º inimigo que pisar escorrega", "efeito": {"arremesso": "banana"}},
+	"teia": {"nome": "Teia Pegajosa", "ic": "🕸", "tipo": "fisica", "alvo": "arremesso",
+		"desc": "Arremessa: prende inimigos na área por 4s", "efeito": {"arremesso": "teia"}},
 }
 
 ## Mão inicial: n cartas aleatórias do pool (MVP — depois vem da loja/corrida).

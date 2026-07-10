@@ -39,6 +39,16 @@ func heal(amount: float) -> void:
 	hp = minf(hp_max, hp + amount)
 	_refresh_hp_bar()
 
+## Escorregão (🍌): giro cômico + quase parado por ~1s + dano leve.
+func slip() -> void:
+	if ko: return
+	apply_speed(0.05, 1.1)
+	take_damage(6.0)
+	var vis := _visual()
+	var tw := create_tween()
+	tw.tween_property(vis, "rotation", TAU * 2.0, 0.55)
+	tw.tween_callback(func(): vis.rotation = 0.0)
+
 var _sprite: Polygon2D
 
 # — SPRITE ANIMADO (pixel art) — feras com spritesheet trocam o disco por animação —

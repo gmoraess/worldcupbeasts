@@ -12,9 +12,9 @@ const SHOWCASE := ["cuirass", "zab", "zak", "foot", "lobo", "urso", "rinoceronte
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(UI.bg_rect())
-	# leve clarão dourado de fundo
-	var glow := UI.bg_rect(Color(0.10, 0.07, 0.03, 1.0))
+	add_child(UI.stone_bg())
+	# leve clarão dourado de fundo (translúcido: deixa a pedra aparecer)
+	var glow := UI.bg_rect(Color(0.24, 0.16, 0.05, 0.16))
 	add_child(glow)
 
 	var col := VBoxContainer.new()

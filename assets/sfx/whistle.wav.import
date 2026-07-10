@@ -2,13 +2,13 @@
 
 importer="wav"
 type="AudioStreamWAV"
-uid="uid://cf55qogx8ksxu"
-path="res://.godot/imported/music_loop.wav-b17d58b8967464e4fe26b0cc22962449.sample"
+uid="uid://bjqu548owbjt"
+path="res://.godot/imported/whistle.wav-eaef9b2290028751864f79cea4b08d6d.sample"
 
 [deps]
 
-source_file="res://assets/sfx/music_loop.wav"
-dest_files=["res://.godot/imported/music_loop.wav-b17d58b8967464e4fe26b0cc22962449.sample"]
+source_file="res://assets/sfx/whistle.wav"
+dest_files=["res://.godot/imported/whistle.wav-eaef9b2290028751864f79cea4b08d6d.sample"]
 
 [params]
 

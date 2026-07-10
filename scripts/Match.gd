@@ -10,6 +10,9 @@ const MatchCardsLib = preload("res://scripts/match/MatchCards.gd")
 const SkillShotLib = preload("res://scripts/match/SkillShot.gd")
 const PassAimLib = preload("res://scripts/match/PassAim.gd")
 const ConfettiFX = preload("res://scripts/fx/Confetti.gd")
+const CrowdFX = preload("res://scripts/fx/Crowd.gd")
+const PowerUpFX = preload("res://scripts/fx/PowerUp.gd")
+const ThrowFX = preload("res://scripts/fx/Throwable.gd")
 
 signal match_over(home_won: bool)   # avisa o roteador quando a partida termina
 
@@ -24,6 +27,7 @@ const MATCH_SECONDS := 90.0
 
 var ball: Ball
 var cam: Camera2D
+var _crowd: Node2D = null        # torcida do coliseu (reage a gol/defesa)
 var home: Array[Player] = []
 var away: Array[Player] = []
 var all: Array[Player] = []
@@ -112,6 +116,13 @@ var _goals_home := 0
 # destruída ao trocar de tela → crash). Aqui param sozinhos quando o nó é liberado.
 var _kickoff_t := -1.0
 var _kickoff_team := ""
+var _climax_music := false     # a trilha já virou clímax? (1x por partida)
+
+# — POWER-UPS no gramado (💣⚡🧲👟) — quem encostar ativa pro seu time —
+var _powerup: Node2D = null
+var _powerup_t := 0.0          # tempo até o próximo spawn
+var _magnet := {"home": 0.0, "away": 0.0}       # 🧲 controle ampliado (timer)
+var _shot_boost := {"home": 1.0, "away": 1.0}   # 👟 mult do PRÓXIMO chute
 var _finish_after_t := -1.0
 var _endmatch_t := -1.0
 var _endmatch_won := false
@@ -135,8 +146,18 @@ func own_goal_x(team: String) -> float:
 	return FIELD.position.x if team == "home" else FIELD.end.x
 
 func _ready() -> void:
-	var grass := ColorRect.new(); grass.color = Color("2f7d3a")
-	grass.size = Vector2(1280, 720); add_child(grass)
+	# estádio-coliseu (arte procedural). Overscan de 40px cobre o shake da câmera.
+	var bgt: Texture2D = UI.tex("res://assets/stadium/stadium_bg.png")
+	if bgt != null:
+		var bg := Sprite2D.new()
+		bg.texture = bgt
+		bg.centered = false
+		bg.position = Vector2(-40, -40)
+		bg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		add_child(bg)
+	else:
+		var grass := ColorRect.new(); grass.color = Color("2f7d3a")
+		grass.size = Vector2(1280, 720); add_child(grass)
 	_pitch_lines()
 	_walls()
 	_goal("home")   # gol que o HOME ataca (direita)
@@ -151,6 +172,11 @@ func _ready() -> void:
 	_build_team("away")
 	all.append_array(home)
 	all.append_array(away)
+
+	# torcida de animais + mascote (uma fera de fora dos dois elencos)
+	_crowd = CrowdFX.new()
+	_crowd.mascot_id = _pick_mascot()
+	add_child(_crowd)
 
 	_score = ScoreEngineLib.new()
 	_score.jokers = GameState.player_jokers()
@@ -167,6 +193,12 @@ func _ready() -> void:
 	_build_hud()
 	_build_hand()
 	_kickoff("home")
+
+	# clima de estádio: faixa de partida (alterna A/B), murmúrio e apito inicial
+	Sfx.music_match()
+	Sfx.ambience_start()
+	Sfx.play("whistle")
+	_powerup_t = randf_range(9.0, 15.0)
 
 # ==========================================================================
 #  TIMES / FORMAÇÃO
@@ -202,6 +234,17 @@ func _build_team(team: String) -> void:
 		p.stats = profile.duplicate()
 		p.max_speed *= profile.get("spd", 1.0)
 		arr.append(p)
+
+## Mascote da torcida: uma fera com spritesheet que NÃO esteja em campo.
+func _pick_mascot() -> String:
+	var used: Array = GameState.titulares.duplicate()
+	used.append_array(GameState.current_node.get("enemy", {}).get("squad_ids", []))
+	var cands: Array = []
+	for id in GameState.POOL:
+		if used.has(id): continue
+		if ResourceLoader.exists("res://assets/beasts/anim/%s_sheet.png" % id):
+			cands.append(id)
+	return String(cands.pick_random()) if not cands.is_empty() else ""
 
 func _kickoff(team: String) -> void:
 	ball.reset_to(MID)
@@ -248,6 +291,10 @@ func _physics_process(delta: float) -> void:
 	_shot_cd = maxf(0.0, _shot_cd - delta)
 	_pass_t = maxf(0.0, _pass_t - delta)
 	_cutin_cd = maxf(0.0, _cutin_cd - delta)
+	# reta final (pouco tempo OU última mão): a música vira o tema de clímax
+	if not _climax_music and not over and (clock <= 14.0 or _hands_left <= 1):
+		_climax_music = true
+		Sfx.music_climax()
 	_tackle_cd = maxf(0.0, _tackle_cd - delta)
 	if _pass_t <= 0.0: _pass_to = null
 	if _goal_cd <= 0.0:
@@ -259,6 +306,7 @@ func _physics_process(delta: float) -> void:
 	_update_possession(delta)
 	_pressure_step(delta)         # Doc 4 §2.1: a marcação aperta enquanto você segura a bola
 	_auto_tackle_step()           # modo Auto: carrinho automático na defesa
+	_powerup_step(delta)          # power-ups no gramado (💣⚡🧲👟)
 	_combat_step(delta)           # (desativado) dano ambiente
 	_super_shot_hits()            # super-chute atropela adversários no caminho
 	_anti_deadlock(delta)         # rede de segurança: bola presa em disputa > 3s
@@ -296,11 +344,11 @@ func _update_possession(delta: float) -> void:
 		# recepção: alguém alcança a bola já desacelerada (passe/sobra)
 		if spd < 470.0:
 			var p := _closest_any()
-			if p != null and p.global_position.distance_to(ball.global_position) < CONTROL_R + 5.0:
+			if p != null and p.global_position.distance_to(ball.global_position) < _ctrl_r(p.team) + 5.0:
 				_set_carrier(p)
 	elif carrier == null:
 		var p := _closest_any()
-		if p != null and p.global_position.distance_to(ball.global_position) < CONTROL_R and spd < 230.0:
+		if p != null and p.global_position.distance_to(ball.global_position) < _ctrl_r(p.team) and spd < 230.0:
 			_set_carrier(p)
 	elif _steal_cd <= 0.0:
 		# goleiro adversário AGARRA bola colada (resolve bola travada GK×atacante)
@@ -319,7 +367,8 @@ func _update_possession(delta: float) -> void:
 			var des: float = opp.stats.get("des", 1.0)
 			var ctrl: float = carrier.stats.get("ctrl", 1.0)
 			var press_mult := (0.35 + _pressao * 1.4) if carrier.team == "home" else 1.0
-			if randf() < 0.07 * clampf(des / maxf(0.4, ctrl), 0.4, 2.4) * press_mult:
+			var mag_mult := 1.7 if _magnet.get(opp.team, 0.0) > 0.0 else 1.0   # 🧲 rouba mais
+			if randf() < 0.07 * clampf(des / maxf(0.4, ctrl), 0.4, 2.4) * press_mult * mag_mult:
 				_shake = maxf(_shake, 4.0)
 				_set_carrier(opp)
 				_add_fury(opp.team, "STEAL")
@@ -376,6 +425,8 @@ func _bust() -> void:
 	_score.reset_hand()
 	_bust_fx()
 	_spend_hand()
+	if _crowd != null: _crowd.ooh()          # a torcida lamenta o bust
+	Sfx.play("crowd_ooh", 0.7)
 
 ## Chute do JOGADOR (Pro) ou do piloto (Casual): BANCA a mão inteira na hora.
 ## A bola sai pra `aim` com `power01` (0..1). Gol depois soma bônus por cima.
@@ -402,6 +453,7 @@ func _home_shoot(aim: Vector2, power01: float, is_super: bool, by_human: bool) -
 	# automático ou acima — sem aquela sensação de "chute mole".
 	var pot := lerpf(900.0, 1500.0, clampf(power01, 0.0, 1.0)) + fin * 200.0
 	pot *= _next_shot_pot; _next_shot_pot = 1.0     # poção Mira Certeira
+	pot *= float(_shot_boost["home"]); _shot_boost["home"] = 1.0   # 👟 chuteira de ouro
 	# PRECISÃO (fin): finalização alta = menos ruído na direção (mira mais fiel)
 	var noise := (1.5 - clampf(fin, 0.5, 1.5)) * (8.0 if by_human else 48.0)
 	var tgt := aim + Vector2(0, randf_range(-noise, noise))
@@ -500,7 +552,82 @@ func _pressure_step(delta: float) -> void:
 		return
 	var opp := _closest_opp_to(carrier)
 	var des: float = opp.stats.get("des", 1.0) if opp != null else 0.6
+	var antes := _pressao
 	_pressao = minf(1.0, _pressao + delta * (BASE_PRESSAO + des * K_PRESSAO))
+	if antes < 0.78 and _pressao >= 0.78:
+		Sfx.play("crowd_uuh", 0.75)          # "uuuh" crescente: o perigo chegou
+
+# ==========================================================================
+#  POWER-UPS NO GRAMADO (juice aprovado: 💣 bomba · ⚡ raio · 🧲 ímã · 👟 ouro)
+# ==========================================================================
+func _powerup_step(delta: float) -> void:
+	_magnet["home"] = maxf(0.0, _magnet["home"] - delta)
+	_magnet["away"] = maxf(0.0, _magnet["away"] - delta)
+	if _powerup == null or not is_instance_valid(_powerup):
+		_powerup = null
+		_powerup_t -= delta
+		if _powerup_t <= 0.0:
+			_spawn_powerup()
+		return
+	for p in all:
+		if p.ko: continue
+		if p.global_position.distance_to(_powerup.global_position) < 30.0:
+			_grab_powerup(p)
+			return
+
+func _spawn_powerup() -> void:
+	_powerup_t = randf_range(13.0, 20.0)
+	var pos := MID
+	for i in 10:                                   # longe da bola e dos gols
+		pos = Vector2(randf_range(300.0, 980.0), randf_range(140.0, 560.0))
+		if pos.distance_to(ball.global_position) > 170.0: break
+	var pu := PowerUpFX.new()
+	pu.kind = String(["bomba", "raio", "ima", "ouro"].pick_random())
+	pu.position = pos
+	add_child(pu)
+	_powerup = pu
+	Sfx.play("powerup")
+
+func _grab_powerup(p: Player) -> void:
+	var kind: String = _powerup.kind
+	_powerup.queue_free()
+	_powerup = null
+	var team := p.team
+	var foes: Array = away if team == "home" else home
+	var mates: Array = home if team == "home" else away
+	match kind:
+		"bomba":
+			ThrowFX.boom(self, p.global_position, foes, ball,
+				func(v: float): _shake = maxf(_shake, v))
+		"raio":
+			Sfx.play("zap")
+			for q in mates:
+				if not q.ko: q.apply_speed(1.5, 5.0)
+		"ima":
+			Sfx.play("magnet")
+			_magnet[team] = 6.0
+		"ouro":
+			Sfx.play("golden")
+			_shot_boost[team] = 1.6
+	_announce_power(kind, team, p.global_position)
+
+## Aviso flutuante no ponto da coleta (sobe e some).
+func _announce_power(kind: String, team: String, pos: Vector2) -> void:
+	var names := {"bomba": "💣 KABUM!", "raio": "⚡ VELOCIDADE!",
+		"ima": "🧲 ÍMÃ! (6s)", "ouro": "👟 CHUTEIRA DE OURO!"}
+	var l := _lbl(pos + Vector2(-60, -40), 20, UI.HOME if team == "home" else UI.AWAY)
+	l.text = names.get(kind, kind)
+	l.z_index = 200
+	add_child(l)
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(l, "position:y", l.position.y - 44.0, 1.1)
+	tw.tween_property(l, "modulate:a", 0.0, 1.1).set_ease(Tween.EASE_IN)
+	tw.chain().tween_callback(l.queue_free)
+
+## Raio de controle do time (o 🧲 amplia por alguns segundos).
+func _ctrl_r(team: String) -> float:
+	return CONTROL_R * (1.85 if _magnet.get(team, 0.0) > 0.0 else 1.0)
 
 ## Vinheta radial (transparente no centro → vermelha nas bordas). Alpha = pressão.
 func _make_vignette() -> Control:
@@ -794,6 +921,8 @@ func _gk_save() -> void:
 				_shot_live = false
 				_shake = maxf(_shake, 6.0)
 				_add_fury("away", "DEFEND"); _add_fury("home", "MISS")
+				if _crowd != null: _crowd.ooh()      # "ôôô" — chute nosso defendido
+				Sfx.play("crowd_ooh", 0.8)
 				if super_save:
 					_super_ready["away"] = false; _fury["away"] = 0.0; _play_cutin("away")
 			_super_shot_live = ""
@@ -816,6 +945,11 @@ func _gk_save() -> void:
 				_shake = maxf(_shake, 6.0)
 				_add_fury(def_side, "DEFEND")
 				_add_fury(shooter, "MISS")
+				if def_side == "home":
+					Sfx.play("crowd_applause", 0.9)  # nosso goleiro pegou!
+				else:
+					if _crowd != null: _crowd.ooh()
+					Sfx.play("crowd_ooh", 0.8)
 				if super_save:
 					_super_ready[def_side] = false; _fury[def_side] = 0.0
 					_play_cutin(def_side)
@@ -913,7 +1047,9 @@ func _carrier_decide() -> void:
 		var aim := goal_c + Vector2(0, randf_range(-noise, noise))
 		carrier.play_action("kick")
 		Sfx.play("kick", 0.7)
-		ball.kick(aim - carrier.global_position, 780.0 + fin * 220.0, randf_range(-1.2, 1.2) * (1.4 - fin), 0.0)
+		var pot_a: float = (780.0 + fin * 220.0) * float(_shot_boost["away"])
+		_shot_boost["away"] = 1.0                    # 👟 (se o away pegou o power-up)
+		ball.kick(aim - carrier.global_position, pot_a, randf_range(-1.2, 1.2) * (1.4 - fin), 0.0)
 		_in_flight = true; carrier = null; _save_rolled = false; _shot_live = true
 		_enter_climax()
 		return
@@ -1065,8 +1201,12 @@ func _score_goal(team: String) -> void:
 	if team == "home":
 		_goal_blast()            # festa: confete + flash + soco de zoom
 		Sfx.play("goal")
+		Sfx.play("crowd_goal")   # urro da torcida (silencioso se o wav não existir)
+		if _crowd != null: _crowd.goal_home()
 	else:
 		Sfx.play("ko", 0.8)      # gol sofrido: baque, não fanfarra
+		Sfx.play("crowd_sad", 0.8)
+		if _crowd != null: _crowd.goal_away()
 	_popup_goal()
 	if over:
 		return
@@ -1145,6 +1285,12 @@ func _finish_by_target(won: bool) -> void:
 	_goal_lbl.modulate = Color(1, 1, 1, 1)
 	_endmatch_won = won
 	_endmatch_t = 1.8            # avisa o roteador pelo _physics_process (sem timer órfão)
+	# apito final + jingle (jingle toca no pool de SFX: sobrevive à troca de faixa)
+	Sfx.play("whistle_end")
+	Sfx.play("jingle_win" if won else "jingle_lose")
+	if _crowd != null:
+		if won: _crowd.goal_home()
+		else: _crowd.goal_away()
 
 # ==========================================================================
 #  CAMPO / HUD
@@ -1379,6 +1525,7 @@ func _set_speed(scale: float, active: Button) -> void:
 
 func _exit_tree() -> void:
 	Engine.time_scale = 1.0    # não deixa a velocidade vazar pros menus
+	Sfx.ambience_stop()        # o murmúrio do estádio morre com a partida
 
 # ==========================================================================
 #  FÚRIA & SUPERS (SPEC §5/§6)
@@ -1523,13 +1670,16 @@ func _card_btn(id: String, idx: int) -> Button:
 
 ## Clicar numa carta → PAUSA o jogo; se precisa de alvo, escolhe o jogador.
 func _use_card(idx: int) -> void:
-	if over or idx >= _hand.size() or _targeting != "": return
+	if over or idx >= _hand.size() or _targeting != "" or _aiming: return
 	var id: String = _hand[idx]
 	var card: Dictionary = MatchCardsLib.POOL[id]
 	get_tree().paused = true
 	if card["alvo"] == "jogador_alvo":
 		_targeting = id
 		_show_target_picker(idx)
+	elif card["alvo"] == "arremesso":
+		_targeting = id
+		_show_throw_picker(idx)
 	else:
 		_apply_card(card, null)
 		_consume_card(idx)
@@ -1555,6 +1705,44 @@ func _pick_target(p: Player, idx: int) -> void:
 	_targeting = ""
 	_consume_card(idx)
 	get_tree().paused = false
+
+## Carta de ARREMESSO: jogo pausado, o jogador clica um PONTO do campo.
+## Botão direito cancela (a carta volta pra mão sem gastar).
+func _show_throw_picker(idx: int) -> void:
+	var catcher := Control.new()
+	catcher.name = "picker"
+	catcher.mouse_filter = Control.MOUSE_FILTER_STOP
+	_hand_layer.add_child(catcher)
+	catcher.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var card: Dictionary = MatchCardsLib.POOL[_targeting]
+	var hint := UI.clbl("%s  Clique no campo para arremessar  ·  botão direito cancela" % card["ic"], 16, UI.GOLD2)
+	hint.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	hint.position = Vector2(640 - 280, 90)
+	hint.custom_minimum_size = Vector2(560, 0)
+	catcher.add_child(hint)
+	catcher.gui_input.connect(_throw_input.bind(catcher, idx))
+
+func _throw_input(ev: InputEvent, catcher: Control, idx: int) -> void:
+	if not (ev is InputEventMouseButton) or not ev.pressed: return
+	var mb := ev as InputEventMouseButton
+	if mb.button_index == MOUSE_BUTTON_RIGHT:      # cancela sem gastar a carta
+		_targeting = ""
+		catcher.queue_free()
+		get_tree().paused = false
+		return
+	if mb.button_index != MOUSE_BUTTON_LEFT: return
+	if _targeting == "": return
+	# tela → mundo (a câmera pode estar deslocada/com zoom)
+	var world: Vector2 = get_viewport().get_canvas_transform().affine_inverse() * mb.position
+	world.x = clampf(world.x, FIELD.position.x + 10.0, FIELD.end.x - 10.0)
+	world.y = clampf(world.y, FIELD.position.y + 10.0, FIELD.end.y - 10.0)
+	var kind: String = MatchCardsLib.POOL[_targeting]["efeito"]["arremesso"]
+	_targeting = ""
+	catcher.queue_free()
+	_consume_card(idx)
+	get_tree().paused = false
+	ThrowFX.throw(self, kind, Vector2(640.0, 736.0), world, away, ball,
+		func(v: float): _shake = maxf(_shake, v))
 
 func _consume_card(idx: int) -> void:
 	if idx < _hand.size():

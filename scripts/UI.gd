@@ -122,6 +122,20 @@ static func bg_rect(col: Color = STONE) -> ColorRect:
 	r.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	return r
 
+## Fundo de pedra do coliseu (arte procedural) pros menus; cai no bg_rect
+## chapado se a textura não existir (headless antigo / asset apagado).
+static func stone_bg() -> Control:
+	var t := tex("res://assets/ui/stone_bg.png")
+	if t == null:
+		return bg_rect()
+	var tr := TextureRect.new()
+	tr.texture = t
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_SCALE
+	tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	tr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	return tr
+
 ## Carrega uma textura se existir; senão null (seguro p/ arte ainda ausente).
 static func tex(path: String) -> Texture2D:
 	return load(path) if path != "" and ResourceLoader.exists(path) else null
@@ -135,6 +149,7 @@ static func icon(path: String, px: Vector2, fallback: String, col: Color = Color
 		tr.texture = t
 		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST   # retratos pixel art
 		tr.custom_minimum_size = px
 		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		return tr

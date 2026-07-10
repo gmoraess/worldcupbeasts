@@ -14,7 +14,7 @@ func _ready() -> void:
 
 func _build() -> void:
 	for c in get_children(): c.queue_free()
-	add_child(UI.bg_rect())
+	add_child(UI.stone_bg())
 	var root := MarginContainer.new()
 	root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for s in ["margin_left", "margin_right", "margin_top", "margin_bottom"]:
