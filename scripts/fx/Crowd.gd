@@ -129,6 +129,16 @@ func ooh() -> void:
 		_mood = "ooh"
 		_mood_t = 0.9
 
+## De onde o mascote arremessa os itens do inventário (fallback: banco).
+func mascot_pos() -> Vector2:
+	return _mascot.position if _mascot != null else Vector2(640.0, 700.0)
+
+## Animação de arremesso do mascote (o "kick" vira o lançamento).
+func mascot_throw() -> void:
+	if _mascot == null: return
+	_mascot.play("kick")
+	_mascot_action_t = 4.0 / 12.0
+
 # ==========================================================================
 #  LOOP
 # ==========================================================================
