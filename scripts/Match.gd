@@ -704,8 +704,7 @@ func _inv_drag_end() -> void:
 	_inv_refresh()
 
 ## Soltou o mouse: dentro do campo = o MASCOTE arremessa o item no ponto.
-func _inv_drop() -> void:
-	var world := get_global_mouse_position()
+func _inv_drop(world: Vector2) -> void:
 	var i := _inv_drag
 	if i < 0 or i >= _inventory.size() or not FIELD.grow(30.0).has_point(world):
 		_inv_drag_end()               # fora do campo: volta pro slot (não gasta)
@@ -744,18 +743,28 @@ func _process(_delta: float) -> void:
 	if _inv_ghost != null:
 		_inv_ghost.position = get_viewport().get_mouse_position() + Vector2(-16.0, -20.0)
 
-## Solta/cancela o arrasto ONDE o mouse estiver (mesmo sobre HUD) — _input vê
-## o evento antes da GUI, então o drop não depende de onde se soltou.
+## Mouse dos power-ups vive AQUI (_input roda ANTES de toda a GUI): nenhum
+## Control tela-cheia consegue engolir o clique — foi exatamente o bug do
+## Main (mouse_filter STOP) que deixava o item "inclicável". Só consumimos
+## o evento quando ele é NOSSO (em cima do item / durante o arrasto).
 func _input(e: InputEvent) -> void:
-	if _inv_drag < 0: return
-	if e is InputEventMouseButton and not (e as InputEventMouseButton).pressed \
-			and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
-		_inv_drop()
-		get_viewport().set_input_as_handled()
-	elif e is InputEventMouseButton and (e as InputEventMouseButton).pressed \
-			and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_RIGHT:
-		_inv_drag_end()               # botão direito cancela (volta pro slot)
-		get_viewport().set_input_as_handled()
+	if not (e is InputEventMouseButton): return
+	var mb := e as InputEventMouseButton
+	if _inv_drag >= 0:
+		if not mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT:
+			_inv_drop(get_canvas_transform().affine_inverse() * mb.position)
+			get_viewport().set_input_as_handled()
+		elif mb.pressed and mb.button_index == MOUSE_BUTTON_RIGHT:
+			_inv_drag_end()           # botão direito cancela (volta pro slot)
+			get_viewport().set_input_as_handled()
+		return
+	# coleta: clique EM CIMA do item do gramado → voa pro inventário
+	if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and not over \
+			and _powerup != null and is_instance_valid(_powerup):
+		var world: Vector2 = get_canvas_transform().affine_inverse() * mb.position
+		if world.distance_to(_powerup.position) < 42.0:
+			_pu_collect()
+			get_viewport().set_input_as_handled()
 
 ## Aviso flutuante no ponto da coleta (sobe e some).
 func _announce_power(kind: String, team: String, pos: Vector2) -> void:
@@ -828,15 +837,6 @@ func _toggle_auto() -> void:
 			_on_pass_cancelled()
 
 func _unhandled_input(e: InputEvent) -> void:
-	# POWER-UP com o mouse — vale em Auto E Pro (antes dos guards de modo):
-	# clique EM CIMA do item = voa pro inventário (o arrasto é tratado em _input).
-	if e is InputEventMouseButton and e.pressed and not over and _inv_drag < 0:
-		if e.button_index == MOUSE_BUTTON_LEFT and _powerup != null \
-				and is_instance_valid(_powerup) \
-				and get_global_mouse_position().distance_to(_powerup.position) < 42.0:
-			_pu_collect()
-			get_viewport().set_input_as_handled()
-			return
 	if _aiming or not pro_mode: return
 	if e is InputEventKey and e.pressed and not e.echo:
 		match e.keycode:

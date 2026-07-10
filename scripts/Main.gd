@@ -18,6 +18,10 @@ var _fade: ColorRect              # véu do fade entre telas (juice aprovado)
 
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# NÃO engolir cliques: o Main cobre a tela inteira e, com o filtro padrão
+	# (STOP), consumia todo clique fora de botões — o _unhandled_input da
+	# partida (pegar power-up, passe no botão direito) nunca recebia o evento.
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	randomize()
 	Settings.apply_all()         # aplica opções salvas (tela cheia, vsync, volumes)
 	# véu de transição: acima de tudo, ignora mouse
