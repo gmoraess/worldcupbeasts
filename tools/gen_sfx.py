@@ -327,6 +327,56 @@ def sfx_web():            # 🕸 teia: splat grudento
     return s
 
 
+# --------------------------------------------------- FOGUINHO DE FÚRIA
+def sfx_fire_full():      # 🔥 encheu: crepitar + sininho subindo (o AVISO)
+    s = silence(0.02)
+    for _ in range(10):
+        add(s, noise_burst(0.02, 0.35, 45.0, 0.5), random.random() * 0.5)
+    add(s, bell(880.0, 0.2, 0.5, 8.0), 0.1)
+    add(s, bell(1318.5, 0.35, 0.55, 6.0), 0.28)
+    return s
+
+
+def sfx_fire_ignite():    # 🔥 clicou: FWOOSH + brasa crepitando
+    s = []
+    n = int(0.5 * SR)
+    y = 0.0
+    for i in range(n):
+        t = i / n
+        y += (0.12 + 0.6 * t) * (random.uniform(-1, 1) - y)
+        s.append(y * math.sin(math.pi * min(1.0, t * 1.2)) * 0.9)
+    add(s, sine_sweep(90, 40, 0.4, 0.7, 4.0), 0.05)
+    for _ in range(8):
+        add(s, noise_burst(0.02, 0.3, 50.0, 0.5), 0.25 + random.random() * 0.35)
+    return s
+
+
+# ----------------------------------------------- ALERTAS DE OFERTA (torcida)
+def sfx_offer_cadeira():  # 🪑 "uh-oh" marotão + toc-toc de madeira
+    s = silence(0.02)
+    add(s, sine_sweep(330, 220, 0.13, 0.6, 5.0), 0.0)       # "uh"
+    add(s, sine_sweep(270, 150, 0.2, 0.65, 4.5), 0.15)      # "oh"
+    for at in (0.42, 0.54):                                  # toc, toc
+        add(s, sine_sweep(185, 85, 0.05, 0.95, 30.0), at)
+        add(s, noise_burst(0.018, 0.5, 60.0, 0.7), at)
+    return s
+
+
+def sfx_offer_corredor():  # 🏃 passinhos apressados + apito deslizando pra cima
+    s = silence(0.02)
+    for k in range(6):
+        add(s, noise_burst(0.02, 0.55 - k * 0.05, 55.0, 0.85), k * 0.065)
+    add(s, sine_sweep(480, 1040, 0.26, 0.55, 3.0), 0.16)
+    return s
+
+
+def sfx_offer_placa():    # 🪧 sininho de bicicleta (di-di-DING!)
+    s = bell(1760.0, 0.16, 0.7, 11.0)                        # A6
+    add(s, bell(1760.0, 0.2, 0.6, 9.0), 0.11)
+    add(s, bell(2093.0, 0.34, 0.45, 6.0), 0.22)              # C7 fecha
+    return s
+
+
 def sfx_throw():          # arremesso: whoosh
     s = []
     n = int(0.34 * SR)
@@ -399,6 +449,13 @@ OUT = {
     'magnet': (sfx_magnet, 0.7), 'golden': (sfx_golden, 0.75),
     'powerup': (sfx_powerup, 0.7), 'slip': (sfx_slip, 0.75),
     'web': (sfx_web, 0.75), 'throw': (sfx_throw, 0.7),
+    # alertas de oferta da torcida (1 por tipo de ofertante)
+    'offer_cadeira': (sfx_offer_cadeira, 0.75),
+    'offer_corredor': (sfx_offer_corredor, 0.7),
+    'offer_placa': (sfx_offer_placa, 0.7),
+    # foguinho de fúria
+    'fire_full': (sfx_fire_full, 0.7),
+    'fire_ignite': (sfx_fire_ignite, 0.85),
     # music_loop saiu daqui: as faixas agora vivem em tools/gen_music.py
 }
 

@@ -39,10 +39,11 @@ var _t := 0.0
 var _from := Vector2.ZERO
 var _to := Vector2.ZERO
 var _label: Label
+var _boom_mult := 1.0            # 🪑 cadeirada explode maior que a 💣
 var _bolt: PackedVector2Array = PackedVector2Array()   # traçado do ⚡
 
 const ICONS := {"bomba": "💣", "banana": "🍌", "teia": "🕸",
-	"raio": "⚡", "ima": "🧲", "ouro": "👟"}
+	"raio": "⚡", "ima": "🧲", "ouro": "👟", "cadeira": "🪑"}
 
 static func throw(parent: Node, k: String, from: Vector2, to: Vector2,
 		vict: Array, b: Node2D, shk: Callable,
@@ -91,15 +92,16 @@ func _detonate() -> void:
 	if sfx != null: sfx.play("explosion")
 	if shaker.is_valid(): shaker.call(12.0)
 	ConfettiFX.burst(get_parent(), position, 40, 420.0)
+	var r := BOOM_R * _boom_mult
 	for p in victims:
 		if p == null or not is_instance_valid(p) or p.ko: continue
 		var d: float = p.global_position.distance_to(position)
-		if d < BOOM_R:
-			var fall := 1.0 - d / BOOM_R
+		if d < r:
+			var fall := 1.0 - d / r
 			var dir: Vector2 = (p.global_position - position).normalized()
 			if dir == Vector2.ZERO: dir = Vector2.RIGHT
 			p.global_position += dir * (14.0 + 22.0 * fall)   # empurrão da onda
-			p.take_damage(BOOM_DMG * (0.4 + 0.6 * fall))
+			p.take_damage(BOOM_DMG * _boom_mult * (0.4 + 0.6 * fall))
 	# a bola também voa com o estouro
 	if ball_ref != null and is_instance_valid(ball_ref):
 		var db: float = ball_ref.global_position.distance_to(position)
@@ -187,6 +189,12 @@ func _land() -> void:
 			mode = "boom"; _t = 0.0
 			if _label != null: _label.queue_free(); _label = null
 			_detonate()
+		"cadeira":
+			# a CADEIRADA (meme): explosão maior que a bomba comum
+			mode = "boom"; _t = 0.0
+			_boom_mult = 1.25
+			if _label != null: _label.queue_free(); _label = null
+			_detonate()
 		"banana":
 			mode = "banana"; _t = 0.0
 			z_index = 1                      # fica no chão, sob os jogadores
@@ -221,7 +229,7 @@ func _land() -> void:
 func _draw() -> void:
 	if mode == "boom":
 		var k := clampf(_t / 0.45, 0.0, 1.0)
-		var r := 24.0 + (BOOM_R + 20.0) * k
+		var r := 24.0 + (BOOM_R * _boom_mult + 20.0) * k
 		var a := (1.0 - k)
 		draw_arc(Vector2.ZERO, r, 0, TAU, 40, Color(1.0, 0.8, 0.3, a * 0.9), 6.0 * (1.0 - k) + 1.5)
 		draw_circle(Vector2.ZERO, r * 0.45, Color(1.0, 0.95, 0.7, a * 0.35))

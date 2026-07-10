@@ -235,6 +235,80 @@ def write_png(path, rows_rgba):
     print('OK', path, '(%dx%d)' % (len(rows_rgba[0]), len(rows_rgba)))
 
 
+# ---------------------------------------------------------------- mascote
+# Bonecão de torcida 24x24, 4 frames de dancinha (onda de braços + quique).
+# Visual PRÓPRIO (fantasia fofa de corpo redondo + camisa do time), de
+# propósito DIFERENTE das feras de campo — o usuário confundia o mascote
+# (que reusava spritesheet de jogador) com um "jogador bugado na torcida".
+MW = MH = 24
+
+
+def mascot_frame(f):
+    g = [[None] * MW for _ in range(MH)]
+    fur = (226, 178, 96)      # pelúcia clara
+    fur2 = (190, 140, 64)     # sombra da pelúcia
+    shirt = (63, 134, 173)    # camisa AZUL do time da casa (UI.HOME)
+    shirt2 = (44, 100, 134)
+    eye = (24, 18, 26)
+    white = (240, 238, 230)
+
+    def put(x, y, c):
+        if 0 <= x < MW and 0 <= y < MH:
+            g[int(y)][int(x)] = c
+
+    def blob(cx, cy, r, c):
+        for yy in range(int(cy - r), int(cy + r) + 1):
+            for xx in range(int(cx - r), int(cx + r) + 1):
+                if (xx - cx) ** 2 + (yy - cy) ** 2 <= r * r:
+                    put(xx, yy, c)
+
+    dy = -1 if f % 2 == 1 else 0                     # quique da dança
+    # corpo redondo com camisa
+    blob(12, 17 + dy, 5, shirt)
+    for xx in range(8, 17):
+        put(xx, 21 + dy, shirt2)                     # barra da camisa
+    # pés
+    put(9, 23, fur2); put(10, 23, fur2)
+    put(14, 23, fur2); put(15, 23, fur2)
+    # cabeçona de pelúcia
+    blob(12, 9 + dy, 6, fur)
+    for xx in range(7, 18):
+        put(xx, 13 + dy, fur2)                       # queixo/sombra
+    # orelhas redondas
+    blob(7, 4 + dy, 2, fur2)
+    blob(17, 4 + dy, 2, fur2)
+    # carão: olhos grandes + sorriso
+    blob(10, 8 + dy, 1.4, white); blob(15, 8 + dy, 1.4, white)
+    put(10, 8 + dy, eye); put(15, 8 + dy, eye)
+    for xx in range(10, 15):
+        put(xx, 11 + dy, eye)
+    put(9, 10 + dy, eye); put(15, 10 + dy, eye)      # cantos do sorrisão
+    # focinho
+    put(12, 9 + dy, fur2); put(13, 9 + dy, fur2)
+    # BRAÇOS por frame (a onda: baixo → esq. cima → os dois → dir. cima)
+    la_up = f in (1, 2)
+    ra_up = f in (2, 3)
+    if la_up:
+        put(5, 12 + dy, fur); put(4, 10 + dy, fur); put(3, 8 + dy, fur2)
+    else:
+        put(6, 17 + dy, fur); put(5, 19 + dy, fur); put(4, 20 + dy, fur2)
+    if ra_up:
+        put(19, 12 + dy, fur); put(20, 10 + dy, fur); put(21, 8 + dy, fur2)
+    else:
+        put(18, 17 + dy, fur); put(19, 19 + dy, fur); put(20, 20 + dy, fur2)
+    return g
+
+
+def mascot_sheet():
+    sheet = [[None] * (MW * 4) for _ in range(MH)]
+    for f in range(4):
+        fr = mascot_frame(f)
+        for yy in range(MH):
+            for xx in range(MW):
+                sheet[yy][f * MW + xx] = fr[yy][xx]
+    return sheet
+
+
 def main():
     outdir = sys.argv[1] if len(sys.argv) > 1 else 'assets/stadium'
     os.makedirs(outdir, exist_ok=True)
@@ -253,6 +327,7 @@ def main():
     write_png(os.path.join(outdir, 'stadium_bg.png'), rgba)
 
     write_png(os.path.join(outdir, 'fans_sheet.png'), fans_sheet())
+    write_png(os.path.join(outdir, 'mascot_sheet.png'), mascot_sheet())
 
 
 if __name__ == '__main__':

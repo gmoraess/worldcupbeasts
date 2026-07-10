@@ -39,6 +39,22 @@ func heal(amount: float) -> void:
 	hp = minf(hp_max, hp + amount)
 	_refresh_hp_bar()
 
+var _fire_t := 0.0
+var _fire_lbl: Label = null
+
+## 🔥 Time em chamas (foguinho de fúria clicado): velocidade + chama visual.
+func ignite(dur: float) -> void:
+	if ko: return
+	apply_speed(1.25, dur)
+	_fire_t = dur
+	if _fire_lbl == null:
+		_fire_lbl = Label.new()
+		_fire_lbl.text = "🔥"
+		_fire_lbl.add_theme_font_size_override("font_size", 13)
+		_fire_lbl.position = Vector2(-7.0, -radius - 27.0)
+		_fire_lbl.z_index = 8
+		add_child(_fire_lbl)
+
 ## Escorregão (🍌): giro cômico + quase parado por ~1s + dano leve.
 func slip() -> void:
 	if ko: return
@@ -240,6 +256,14 @@ func _physics_process(delta: float) -> void:
 	if vel_mult_t > 0.0:
 		vel_mult_t -= delta
 		if vel_mult_t <= 0.0: vel_mult = 1.0
+	if _fire_t > 0.0:                 # 🔥 chama tremula acima da cabeça
+		_fire_t -= delta
+		if _fire_lbl != null:
+			_fire_lbl.position.y = -radius - 27.0 + sin(phase + _fire_t * 9.0) * 2.0
+			_fire_lbl.visible = not ko
+		if _fire_t <= 0.0 and _fire_lbl != null:
+			_fire_lbl.queue_free()
+			_fire_lbl = null
 	var to := target - global_position
 	var dist := to.length()
 	var desired := Vector2.ZERO

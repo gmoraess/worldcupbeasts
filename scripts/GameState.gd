@@ -122,25 +122,28 @@ const DEBUFFS := {
 const DEBUFF_POOL := {"normal": ["neblina", "teto"], "elite": ["muralha", "anti_artilheiro"], "boss": ["tempestade", "tirania"]}
 
 # relíquias — mexem em PARÂMETROS FÍSICOS (mods aplicados a TODO o time do jogador).
+# AUDITORIA 2026-07-10: textos reescritos pra dizer O QUE ACONTECE de verdade
+# (não existe fadiga no jogo — 'sta' é VIDA/HP; 'def' vale pro goleiro E pra
+# vida de todos; 'des' = roubo + dano de carrinho; 'ctrl' = resistir a roubo).
 const RELICS := {
-	"chuteira_rapida": {"name": "Chuteira Veloz", "ic": "⚡", "desc": "+velocidade do time", "mods": {"spd_mult": 0.12}},
-	"bota_craque":     {"name": "Bota de Craque", "ic": "👟", "desc": "+potência/precisão de chute", "mods": {"fin_mult": 0.18}},
-	"luvas_goleiro":   {"name": "Luvas do Goleiro", "ic": "🧤", "desc": "+alcance/defesa do goleiro", "mods": {"def_mult": 0.20}},
-	"garra_afiada":    {"name": "Garra Afiada", "ic": "🐾", "desc": "+força do bote/desarme", "mods": {"des_mult": 0.20}},
-	"coracao_ferro":   {"name": "Coração de Ferro", "ic": "🔥", "desc": "+fôlego (menos fadiga)", "mods": {"sta_mult": 0.20}},
-	"imã_da_bola":     {"name": "Imã da Bola", "ic": "🧲", "desc": "+controle (segura a bola)", "mods": {"ctrl_mult": 0.20}},
-	"manto_sombrio":   {"name": "Manto Sombrio", "ic": "🌑", "desc": "+velocidade e +desarme", "mods": {"spd_mult": 0.08, "des_mult": 0.10}},
-	"elmo_guardiao":   {"name": "Elmo do Guardião", "ic": "⛑", "desc": "+defesa e +fôlego", "mods": {"def_mult": 0.12, "sta_mult": 0.10}},
-	"garras_gemeas":   {"name": "Garras Gêmeas", "ic": "✌", "desc": "+desarme e +finalização", "mods": {"des_mult": 0.12, "fin_mult": 0.10}},
-	"talisma_furia":   {"name": "Talismã da Fúria", "ic": "😤", "desc": "++chute e velocidade, −defesa", "mods": {"fin_mult": 0.22, "spd_mult": 0.08, "def_mult": -0.10}},
-	"couraca_antiga":  {"name": "Couraça Antiga", "ic": "🛡", "desc": "++defesa e controle, −velocidade", "mods": {"def_mult": 0.18, "ctrl_mult": 0.10, "spd_mult": -0.08}},
-	"essencia_veloz":  {"name": "Essência Veloz", "ic": "💨", "desc": "++velocidade e controle, −fôlego", "mods": {"spd_mult": 0.18, "ctrl_mult": 0.08, "sta_mult": -0.08}},
-	"estandarte":      {"name": "Estandarte Real", "ic": "🚩", "desc": "+controle e +finalização do time", "mods": {"ctrl_mult": 0.10, "fin_mult": 0.10}},
-	"tambor_guerra":   {"name": "Tambor de Guerra", "ic": "🥁", "desc": "+velocidade e +desarme do time", "mods": {"spd_mult": 0.10, "des_mult": 0.12}},
-	"armadura_real":   {"name": "Armadura Real", "ic": "🏰", "desc": "++defesa e fôlego, −velocidade", "mods": {"def_mult": 0.16, "sta_mult": 0.12, "spd_mult": -0.10}},
-	"relicario_fogo":  {"name": "Relicário de Fogo", "ic": "🌋", "desc": "++chute e velocidade, −controle", "mods": {"fin_mult": 0.18, "spd_mult": 0.10, "ctrl_mult": -0.08}},
-	"calice_vida":     {"name": "Cálice da Vida", "ic": "🏆", "desc": "+fôlego e +defesa (resistência)", "mods": {"sta_mult": 0.14, "def_mult": 0.10}},
-	"maestro":         {"name": "Maestro do Meio", "ic": "🎼", "desc": "Passes voltam a pontuar chips (+1) · +controle", "mods": {"ctrl_mult": 0.06}, "passe_pontua": true},
+	"chuteira_rapida": {"name": "Chuteira Veloz", "ic": "⚡", "desc": "Time inteiro +15% mais RÁPIDO", "mods": {"spd_mult": 0.15}},
+	"bota_craque":     {"name": "Bota de Craque", "ic": "👟", "desc": "Chutes +18%: mais FORTES e mais PRECISOS", "mods": {"fin_mult": 0.18}},
+	"luvas_goleiro":   {"name": "Luvas do Goleiro", "ic": "🧤", "desc": "+20% defesa: goleiro pega MUITO mais · time aguenta mais pancada", "mods": {"def_mult": 0.20}},
+	"garra_afiada":    {"name": "Garra Afiada", "ic": "🐾", "desc": "+20% desarme: rouba mais bolas e o carrinho machuca mais", "mods": {"des_mult": 0.20}},
+	"coracao_ferro":   {"name": "Coração de Ferro", "ic": "🔥", "desc": "+20% VIDA: aguenta carrinho, bomba e super sem cair", "mods": {"sta_mult": 0.20}},
+	"imã_da_bola":     {"name": "Imã da Bola", "ic": "🧲", "desc": "+20% controle: MUITO mais difícil roubarem sua bola", "mods": {"ctrl_mult": 0.20}},
+	"manto_sombrio":   {"name": "Manto Sombrio", "ic": "🌑", "desc": "+8% velocidade · +10% desarme", "mods": {"spd_mult": 0.08, "des_mult": 0.10}},
+	"elmo_guardiao":   {"name": "Elmo do Guardião", "ic": "⛑", "desc": "+12% defesa (goleiro) · +10% vida", "mods": {"def_mult": 0.12, "sta_mult": 0.10}},
+	"garras_gemeas":   {"name": "Garras Gêmeas", "ic": "✌", "desc": "+12% desarme · +10% chute", "mods": {"des_mult": 0.12, "fin_mult": 0.10}},
+	"talisma_furia":   {"name": "Talismã da Fúria", "ic": "😤", "desc": "+22% chute · +8% velocidade · MAS −10% defesa", "mods": {"fin_mult": 0.22, "spd_mult": 0.08, "def_mult": -0.10}},
+	"couraca_antiga":  {"name": "Couraça Antiga", "ic": "🛡", "desc": "+18% defesa · +10% controle · MAS −8% velocidade", "mods": {"def_mult": 0.18, "ctrl_mult": 0.10, "spd_mult": -0.08}},
+	"essencia_veloz":  {"name": "Essência Veloz", "ic": "💨", "desc": "+18% velocidade · +8% controle · MAS −8% vida", "mods": {"spd_mult": 0.18, "ctrl_mult": 0.08, "sta_mult": -0.08}},
+	"estandarte":      {"name": "Estandarte Real", "ic": "🚩", "desc": "+10% controle · +10% chute", "mods": {"ctrl_mult": 0.10, "fin_mult": 0.10}},
+	"tambor_guerra":   {"name": "Tambor de Guerra", "ic": "🥁", "desc": "+10% velocidade · +12% desarme", "mods": {"spd_mult": 0.10, "des_mult": 0.12}},
+	"armadura_real":   {"name": "Armadura Real", "ic": "🏰", "desc": "+16% defesa · +12% vida · MAS −10% velocidade", "mods": {"def_mult": 0.16, "sta_mult": 0.12, "spd_mult": -0.10}},
+	"relicario_fogo":  {"name": "Relicário de Fogo", "ic": "🌋", "desc": "+18% chute · +10% velocidade · MAS −8% controle", "mods": {"fin_mult": 0.18, "spd_mult": 0.10, "ctrl_mult": -0.08}},
+	"calice_vida":     {"name": "Cálice da Vida", "ic": "🏆", "desc": "+14% vida · +10% defesa: o time quase não cai", "mods": {"sta_mult": 0.14, "def_mult": 0.10}},
+	"maestro":         {"name": "Maestro do Meio", "ic": "🎼", "desc": "PASSES pontuam chips (+1; lançamento +3) · +6% controle", "mods": {"ctrl_mult": 0.06}, "passe_pontua": true},
 }
 
 ## A corrida tem a relíquia que faz passes pontuarem? (senão passe não dá chips)

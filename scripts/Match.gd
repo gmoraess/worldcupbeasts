@@ -11,7 +11,7 @@ const SkillShotLib = preload("res://scripts/match/SkillShot.gd")
 const PassAimLib = preload("res://scripts/match/PassAim.gd")
 const ConfettiFX = preload("res://scripts/fx/Confetti.gd")
 const CrowdFX = preload("res://scripts/fx/Crowd.gd")
-const PowerUpFX = preload("res://scripts/fx/PowerUp.gd")
+const FlameFX = preload("res://scripts/fx/FlameMeter.gd")
 const ThrowFX = preload("res://scripts/fx/Throwable.gd")
 
 signal match_over(home_won: bool)   # avisa o roteador quando a partida termina
@@ -119,7 +119,6 @@ var _kickoff_team := ""
 var _climax_music := false     # a trilha já virou clímax? (1x por partida)
 
 # — POWER-UPS no gramado (💣⚡🧲👟) — quem encostar ativa pro seu time —
-var _powerup: Node2D = null
 var _powerup_t := 0.0          # tempo até o próximo spawn
 var _magnet := {"home": 0.0, "away": 0.0}       # 🧲 controle ampliado (timer)
 var _shot_boost := {"home": 1.0, "away": 1.0}   # 👟 mult do PRÓXIMO chute
@@ -184,9 +183,8 @@ func _ready() -> void:
 	all.append_array(home)
 	all.append_array(away)
 
-	# torcida de animais + mascote (uma fera de fora dos dois elencos)
+	# torcida de animais + mascote (bonecão próprio, sprite da arquibancada)
 	_crowd = CrowdFX.new()
-	_crowd.mascot_id = _pick_mascot()
 	add_child(_crowd)
 
 	_score = ScoreEngineLib.new()
@@ -246,17 +244,6 @@ func _build_team(team: String) -> void:
 		p.max_speed *= profile.get("spd", 1.0)
 		arr.append(p)
 
-## Mascote da torcida: uma fera com spritesheet que NÃO esteja em campo.
-func _pick_mascot() -> String:
-	var used: Array = GameState.titulares.duplicate()
-	used.append_array(GameState.current_node.get("enemy", {}).get("squad_ids", []))
-	var cands: Array = []
-	for id in GameState.POOL:
-		if used.has(id): continue
-		if ResourceLoader.exists("res://assets/beasts/anim/%s_sheet.png" % id):
-			cands.append(id)
-	return String(cands.pick_random()) if not cands.is_empty() else ""
-
 func _kickoff(team: String) -> void:
 	ball.reset_to(MID)
 	for p in all:
@@ -302,8 +289,8 @@ func _physics_process(delta: float) -> void:
 	_shot_cd = maxf(0.0, _shot_cd - delta)
 	_pass_t = maxf(0.0, _pass_t - delta)
 	_cutin_cd = maxf(0.0, _cutin_cd - delta)
-	# reta final (pouco tempo OU última mão): a música vira o tema de clímax
-	if not _climax_music and not over and (clock <= 14.0 or _hands_left <= 1):
+	# reta final: a música vira o tema de clímax
+	if not _climax_music and not over and clock <= 14.0:
 		_climax_music = true
 		Sfx.music_climax()
 	_tackle_cd = maxf(0.0, _tackle_cd - delta)
@@ -329,6 +316,11 @@ func _physics_process(delta: float) -> void:
 		if carrier != null:
 			_carrier_decide()
 	_move_players()
+	# ninguém sai do gramado: o empurrão da explosão teleportava através da
+	# parede e, no pós-gol, perseguiam a bola PELA BOCA DO GOL (bug reportado)
+	for p in all:
+		p.global_position.x = clampf(p.global_position.x, FIELD.position.x + 6.0, FIELD.end.x - 6.0)
+		p.global_position.y = clampf(p.global_position.y, FIELD.position.y + 6.0, FIELD.end.y - 6.0)
 	_check_goal()
 	_camera_juice(delta)
 	if ball.speed() > 240.0:
@@ -472,12 +464,11 @@ func _home_shoot(aim: Vector2, power01: float, is_super: bool, by_human: bool) -
 	_in_flight = true; carrier = null; _save_rolled = false; _shot_live = true
 	_enter_climax()
 
-## Gasta uma posse de ataque; acabando as mãos, encerra pela pontuação-alvo.
+## Gasta uma posse de ataque. Mãos NÃO encerram mais a partida (acabava cedo
+## demais — pedido do usuário: só há 2 fins: alvo batido = vitória antecipada
+## · tempo esgotado = derrota se a pontuação não bateu o alvo). Telemetria.
 func _spend_hand() -> void:
 	_hands_left = maxi(0, _hands_left - 1)
-	if _hands_left <= 0 and not over:
-		# deixa o lance em voo resolver (gol/defesa) antes de fechar
-		_finish_after_flight()
 
 func _finish_after_flight() -> void:
 	_finish_after_t = 2.4        # contado no _physics_process (sem timer órfão)
@@ -569,82 +560,31 @@ func _pressure_step(delta: float) -> void:
 		Sfx.play("crowd_uuh", 0.75)          # "uuuh" crescente: o perigo chegou
 
 # ==========================================================================
-#  POWER-UPS NO GRAMADO (juice aprovado: 💣 bomba · ⚡ raio · 🧲 ímã · 👟 ouro)
+#  POWER-UPS OFERTADOS PELA TORCIDA ("ache o Wally" — pedido do usuário):
+#  um torcedor oferece o item (🪑 cadeira erguida · corredor fora do campo ·
+#  plaquinha com o símbolo); ACHE-o e clique nele → inventário.
 # ==========================================================================
 func _powerup_step(delta: float) -> void:
 	_magnet["home"] = maxf(0.0, _magnet["home"] - delta)
 	_magnet["away"] = maxf(0.0, _magnet["away"] - delta)
-	if _powerup == null or not is_instance_valid(_powerup):
-		_powerup = null
-		_powerup_t -= delta
-		if _powerup_t <= 0.0:
-			_spawn_powerup()
-		return
-	# toque por contato: SÓ o inimigo rouba assim (os seus são pego com clique)
-	for p in away:
-		if p.ko: continue
-		if p.global_position.distance_to(_powerup.global_position) < 30.0:
-			_grab_powerup(p)
-			return
-
-func _spawn_powerup() -> void:
-	_powerup_t = randf_range(13.0, 20.0)
-	var pos := MID
-	for i in 10:                                   # longe da bola e dos gols
-		pos = Vector2(randf_range(300.0, 980.0), randf_range(140.0, 560.0))
-		if pos.distance_to(ball.global_position) > 170.0: break
-	var pu := PowerUpFX.new()
-	pu.kind = String(["bomba", "raio", "ima", "ouro"].pick_random())
-	pu.position = pos
-	add_child(pu)
-	_powerup = pu
-	Sfx.play("powerup")
-
-## INIMIGO encostou no item: o efeito detona ALI MESMO (espelho do arremesso
-## do jogador — mesmos efeitos de área, vítimas = o SEU time).
-func _grab_powerup(p: Player) -> void:
-	var kind: String = _powerup.kind
-	var pos: Vector2 = _powerup.position
-	_powerup.queue_free()
-	_powerup = null
-	var shaker := func(v: float): _shake = maxf(_shake, v)
-	match kind:
-		"bomba":
-			ThrowFX.spawn(self, "boom", pos, home, ball, shaker)
-		"raio":
-			ThrowFX.spawn(self, "raio", pos, home, ball, shaker)
-		"ima":
-			ThrowFX.spawn(self, "ima", pos, home, ball, shaker)
-		"ouro":
-			Sfx.play("golden")
-			p.apply_speed(1.35, 5.0)
-			_shot_boost["away"] = 1.8
-			var vis: CanvasItem = p._visual()
-			var tw := create_tween()
-			for k in 3:
-				tw.tween_property(vis, "modulate", Color(1.9, 1.6, 0.6, 1.0), 0.16)
-				tw.tween_property(vis, "modulate", Color.WHITE, 0.16)
-	_announce_power(kind, "away", pos)
+	if _crowd == null or _crowd.offer_active(): return
+	_powerup_t -= delta
+	if _powerup_t <= 0.0:
+		_powerup_t = randf_range(14.0, 22.0)
+		_crowd.offer_start(String(["bomba", "raio", "ima", "ouro", "cadeira"].pick_random()))
+		# (a deixa sonora vem do Crowd: alerta próprio por tipo de ofertante)
 
 # --------------------------------------------------------------------------
-#  INVENTÁRIO de power-ups: clique pega (voa pra barra) → arrasta → arremessa
+#  INVENTÁRIO de power-ups: clique no ofertante → slot na barra → arrasta
 # --------------------------------------------------------------------------
-## Clique no item do gramado: voa pro primeiro slot livre da barra lateral.
-func _pu_collect() -> void:
-	if _inventory.size() >= INV_MAX:
-		_inv_flash_full()
-		return
-	var kind: String = _powerup.kind
-	var from: Vector2 = _powerup.position
-	_powerup.queue_free()
-	_powerup = null
-	_powerup_t = randf_range(13.0, 20.0)
+## Achou o torcedor! O item voa da arquibancada pro primeiro slot livre.
+func _pu_collect(kind: String, from: Vector2) -> void:
 	Sfx.play("powerup")
 	_inventory.append(kind)
-	# animação: o emoji voa do gramado até o slot (coords de TELA no HUD)
+	# animação: o emoji voa da arquibancada até o slot (coords de TELA no HUD)
 	var scr: Vector2 = get_viewport().get_canvas_transform() * from
 	var fly := _lbl(scr, 22, Color.WHITE)
-	fly.text = PowerUpFX.KINDS.get(kind, {}).get("ic", "❓")
+	fly.text = String(ThrowFX.ICONS.get(kind, "❓"))
 	fly.z_index = 260
 	_hud_layer.add_child(fly)
 	var slot_i: int = _inventory.size() - 1
@@ -670,7 +610,7 @@ func _inv_refresh() -> void:
 	for i in _inv_slots.size():
 		var lb: Label = (_inv_slots[i] as Control).get_child(0)
 		if i < _inventory.size():
-			lb.text = String(PowerUpFX.KINDS.get(_inventory[i], {}).get("ic", "❓"))
+			lb.text = String(ThrowFX.ICONS.get(_inventory[i], "❓"))
 		else:
 			lb.text = ""
 
@@ -686,7 +626,7 @@ func _inv_drag_start(i: int) -> void:
 	_inv_prev_ts = Engine.time_scale
 	Engine.time_scale = 0.25          # câmera lenta: escolha o alvo com estilo
 	_inv_ghost = _lbl(get_viewport().get_mouse_position(), 30, Color.WHITE)
-	_inv_ghost.text = String(PowerUpFX.KINDS.get(_inventory[i], {}).get("ic", "❓"))
+	_inv_ghost.text = String(ThrowFX.ICONS.get(_inventory[i], "❓"))
 	_inv_ghost.z_index = 260
 	_hud_layer.add_child(_inv_ghost)
 	(_inv_slots[i] as Control).modulate = Color(1, 1, 1, 0.35)
@@ -758,18 +698,22 @@ func _input(e: InputEvent) -> void:
 			_inv_drag_end()           # botão direito cancela (volta pro slot)
 			get_viewport().set_input_as_handled()
 		return
-	# coleta: clique EM CIMA do item do gramado → voa pro inventário
+	# coleta: clique EM CIMA do torcedor ofertante → item voa pro inventário
 	if mb.pressed and mb.button_index == MOUSE_BUTTON_LEFT and not over \
-			and _powerup != null and is_instance_valid(_powerup):
+			and _crowd != null and _crowd.offer_active():
 		var world: Vector2 = get_canvas_transform().affine_inverse() * mb.position
-		if world.distance_to(_powerup.position) < 42.0:
-			_pu_collect()
+		if _crowd.offer_hit(world):
+			if _inventory.size() >= INV_MAX:
+				_inv_flash_full()          # cheio: a oferta continua de pé
+			else:
+				_pu_collect(_crowd.offer_take(), world)
 			get_viewport().set_input_as_handled()
 
 ## Aviso flutuante no ponto da coleta (sobe e some).
 func _announce_power(kind: String, team: String, pos: Vector2) -> void:
 	var names := {"bomba": "💣 KABUM!", "raio": "⚡ TEMPESTADE!",
-		"ima": "🧲 ÍMÃ NA ÁREA!", "ouro": "👟 CHUTEIRA DE OURO!"}
+		"ima": "🧲 ÍMÃ NA ÁREA!", "ouro": "👟 CHUTEIRA DE OURO!",
+		"cadeira": "🪑 CADEIRADA!"}
 	var l := _lbl(pos + Vector2(-60, -40), 20, UI.HOME if team == "home" else UI.AWAY)
 	l.text = names.get(kind, kind)
 	l.z_index = 200
@@ -1603,9 +1547,8 @@ func _build_hud() -> void:
 	_vignette = _make_vignette()
 	layer.add_child(_vignette)
 
-	# DOC 4 §4.1 — POSSES RESTANTES (mãos do blind) ao lado do relógio
-	_hands_lbl = _chip("⚽×%d" % _hands_left, 14, UI.GOLD2)
-	sub.add_child(_hands_lbl)
+	# (o chip de "posses restantes" saiu: mãos não limitam mais a partida —
+	# só tempo/alvo encerram; _hands_left segue como telemetria)
 
 	# DOC 4 §4.4 — botões distintos: PASSAR · CHUTAR (com a bola) · CARRINHO (defesa)
 	var bottom := HBoxContainer.new()
@@ -1712,32 +1655,52 @@ func _exit_tree() -> void:
 # ==========================================================================
 #  FÚRIA & SUPERS (SPEC §5/§6)
 # ==========================================================================
-func _make_fury_bar(layer: CanvasLayer, is_home: bool, col: Color, nm: String) -> ProgressBar:
+## FOGUINHO de fúria (substituiu a barra — pedido do usuário): a chama cresce;
+## cheia, pisca "FULL!" e o CLIQUE (só no lado do jogador) incendeia o time.
+func _make_fury_bar(layer: CanvasLayer, is_home: bool, col: Color, nm: String) -> Control:
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 2)
+	box.add_theme_constant_override("separation", 0)
 	layer.add_child(box)
 	if is_home:
 		box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
-		box.offset_left = 16; box.offset_top = -52; box.offset_bottom = -12
+		box.offset_left = 16; box.offset_top = -122; box.offset_bottom = -10
 	else:
 		box.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-		box.offset_left = -236; box.offset_right = -16; box.offset_top = -52; box.offset_bottom = -12
+		box.offset_left = -104; box.offset_right = -16; box.offset_top = -122; box.offset_bottom = -10
+	var flame: Control = FlameFX.new()
+	flame.col = col
+	flame.clickable = is_home
+	if is_home:
+		flame.ignited.connect(_ignite_home)
+	box.add_child(flame)
 	box.add_child(_chip("FÚRIA · " + nm, 10, col))
-	var bar := ProgressBar.new()
-	bar.custom_minimum_size = Vector2(220, 14)
-	bar.min_value = 0; bar.max_value = 100; bar.value = 0
-	bar.show_percentage = false
-	bar.add_theme_stylebox_override("background", UI.sbf(UI.PANEL2, UI.BRONZE, 1, 6, 0, 0))
-	bar.add_theme_stylebox_override("fill", UI.sbf(col, col, 0, 6, 0, 0))
-	box.add_child(bar)
-	return bar
+	return flame
 
-## Soma fúria de um lado por evento (SPEC §5.1). Cheia → arma o super (não acumula).
+## Soma fúria de um lado por evento (SPEC §5.1). AWAY arma sozinho ao encher;
+## o HOME arma no CLIQUE do foguinho (o ritual é do jogador).
 func _add_fury(side: String, kind: String) -> void:
 	if _super_ready[side]: return
 	_fury[side] = clampf(_fury[side] + FURY_GAIN.get(kind, 0.0), 0.0, 100.0)
-	if _fury[side] >= 100.0:
+	if side == "away" and _fury[side] >= 100.0:
 		_super_ready[side] = true
+
+## Clique no foguinho CHEIO: o time INCENDEIA — 🔥 em cada fera + velocidade
+## por 8s + o próximo lance usa o SUPER da capitã (chute-bomba ou muralha).
+func _ignite_home() -> void:
+	if _fury["home"] < 100.0 or _super_ready["home"] or over: return
+	_super_ready["home"] = true
+	Sfx.play("fire_ignite")
+	for p in home:
+		if not p.ko: p.ignite(8.0)
+	var l := _lbl(Vector2(430.0, 330.0), 30, Color(1.0, 0.72, 0.2))
+	l.text = "🔥 EM CHAMAS! 🔥"
+	l.z_index = 210
+	add_child(l)
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(l, "position:y", 280.0, 1.0)
+	tw.tween_property(l, "modulate:a", 0.0, 1.0).set_ease(Tween.EASE_IN)
+	tw.chain().tween_callback(l.queue_free)
 
 ## Tipo do super do lado: "save" (muralha do goleiro) ou "shot" (os demais).
 func _super_kind(side: String) -> String:
@@ -2002,8 +1965,6 @@ func _hud_update() -> void:
 		else:
 			_chips_lbl.add_theme_color_override("font_color", UI.RUNE2)
 	_clock_lbl.text = "%d'" % clampi(int(MATCH_SECONDS - clock), 0, 99)
-	if _hands_lbl != null:
-		_hands_lbl.text = "⚽×%d" % _hands_left
 
 	# DOC 4 §4.2 — medidor da mão flutua perto da bola enquanto VOCÊ tem a posse
 	if _hand_meter != null and not _bust_anim:
@@ -2049,13 +2010,9 @@ func _hud_update() -> void:
 	else:
 		_poss_lbl.text = "• bola livre •"
 		_poss_lbl.add_theme_color_override("font_color", UI.RUNE2)
-	# barras de fúria (pulsam quando o super está armado)
+	# foguinhos de fúria (a chama cresce; "armado" pulsa por conta própria)
 	for side in ["home", "away"]:
-		var bar: ProgressBar = _fury_bar[side]
-		if bar == null: continue
-		bar.value = _fury[side]
-		if _super_ready[side]:
-			var pulse := 0.6 + 0.4 * sin(Time.get_ticks_msec() * 0.012)
-			bar.modulate = Color(1, 1, 1, pulse)
-		else:
-			bar.modulate = Color(1, 1, 1, 1)
+		var flame = _fury_bar[side]
+		if flame == null: continue
+		flame.value = _fury[side]
+		flame.armed = _super_ready[side]

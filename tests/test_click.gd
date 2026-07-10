@@ -24,12 +24,13 @@ func _run() -> void:
 	await process_frame
 	var m = main.current
 
-	# força um power-up e CLICA nele (evento de mouse de verdade)
-	m._spawn_powerup()
+	# força uma OFERTA da torcida e CLICA no torcedor ofertante
+	m._crowd.offer_start("raio")
 	await process_frame
-	assert(m._powerup != null, "power-up deveria ter spawnado")
-	var screen: Vector2 = m.get_viewport().get_canvas_transform() * (m._powerup.position as Vector2)
-	print("  [debug] item=%s screen=%s over=%s drag=%d" % [m._powerup.position, screen, m.over, m._inv_drag])
+	assert(m._crowd.offer_active(), "oferta da torcida deveria estar ativa")
+	var alvo: Vector2 = (m._crowd._offer_pos as Vector2) + Vector2(0.0, -12.0)
+	var screen: Vector2 = m.get_viewport().get_canvas_transform() * alvo
+	print("  [debug] ofertante=%s (%s) screen=%s over=%s" % [m._crowd._offer_pos, m._crowd._offer_anim, screen, m.over])
 	_click(screen)
 	await process_frame
 	await process_frame

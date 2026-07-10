@@ -15,6 +15,7 @@ const NAMES := [
 	"crowd_goal", "crowd_ooh", "crowd_sad", "crowd_uuh", "crowd_applause",
 	"crowd_ola", "crowd_loop", "whistle", "whistle_end",
 	"explosion", "zap", "magnet", "golden", "powerup", "slip", "web", "throw",
+	"offer_cadeira", "offer_corredor", "offer_placa", "fire_full", "fire_ignite",
 	"music_menu", "music_match_a", "music_match_b", "music_climax",
 	"jingle_win", "jingle_lose",
 ]
