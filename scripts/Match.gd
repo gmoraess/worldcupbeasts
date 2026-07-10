@@ -123,6 +123,14 @@ var _powerup: Node2D = null
 var _powerup_t := 0.0          # tempo até o próximo spawn
 var _magnet := {"home": 0.0, "away": 0.0}       # 🧲 controle ampliado (timer)
 var _shot_boost := {"home": 1.0, "away": 1.0}   # 👟 mult do PRÓXIMO chute
+# CLIQUE no item = pega pro SEU time (sem depender do passeio dos jogadores).
+# Buffs ativam na hora; a 💣 abre MIRA em câmera lenta (clique arremessa,
+# botão direito devolve o item ao gramado).
+var _pu_aim_kind := ""         # "" = sem mira ativa
+var _pu_aim_from := Vector2.ZERO
+var _pu_prev_ts := 1.0         # Engine.time_scale antes da câmera lenta
+var _pu_cross: Label = null    # retícula 🎯 que segue o mouse
+var _pu_hint: Label = null     # instrução no topo (camada de HUD)
 var _finish_after_t := -1.0
 var _endmatch_t := -1.0
 var _endmatch_won := false
@@ -565,6 +573,7 @@ func _powerup_step(delta: float) -> void:
 	_magnet["away"] = maxf(0.0, _magnet["away"] - delta)
 	if _powerup == null or not is_instance_valid(_powerup):
 		_powerup = null
+		if _pu_aim_kind != "": return   # mirando a 💣: segura o próximo spawn
 		_powerup_t -= delta
 		if _powerup_t <= 0.0:
 			_spawn_powerup()
@@ -611,6 +620,85 @@ func _grab_powerup(p: Player) -> void:
 			_shot_boost[team] = 1.6
 	_announce_power(kind, team, p.global_position)
 
+## Pegou com o MOUSE: buffs de time ativam na hora pro SEU time; a 💣 abre
+## a mira em câmera lenta (o momento divertido: você escolhe onde estoura).
+func _grab_powerup_mouse() -> void:
+	var kind: String = _powerup.kind
+	var from: Vector2 = _powerup.position
+	_powerup.queue_free()
+	_powerup = null
+	_powerup_t = randf_range(13.0, 20.0)
+	Sfx.play("powerup")
+	if kind == "bomba":
+		_pu_aim_begin(from)
+		return
+	match kind:
+		"raio":
+			Sfx.play("zap")
+			for q in home:
+				if not q.ko: q.apply_speed(1.5, 5.0)
+		"ima":
+			Sfx.play("magnet")
+			_magnet["home"] = 6.0
+		"ouro":
+			Sfx.play("golden")
+			_shot_boost["home"] = 1.6
+	_announce_power(kind, "home", from)
+
+## Entra na mira da bomba: câmera lenta + retícula 🎯 seguindo o mouse.
+func _pu_aim_begin(from: Vector2) -> void:
+	_pu_aim_kind = "bomba"
+	_pu_aim_from = from
+	_pu_prev_ts = Engine.time_scale
+	Engine.time_scale = 0.22
+	_pu_cross = _lbl(Vector2.ZERO, 26, Color("ff6a4a"))
+	_pu_cross.text = "🎯"
+	_pu_cross.z_index = 250
+	add_child(_pu_cross)
+	var held := _lbl(from + Vector2(-13, -34), 22, Color.WHITE)
+	held.name = "pu_held"
+	held.text = "💣"
+	held.z_index = 250
+	add_child(held)
+	_pu_hint = _lbl(Vector2(640.0 - 290.0, 36.0), 17, UI.GOLD2)
+	_pu_hint.text = "💣 CÂMERA LENTA — clique onde quer estourar · botão direito devolve"
+	_pu_hint.z_index = 250
+	add_child(_pu_hint)
+
+## Arremessa a bomba no ponto clicado (fim da câmera lenta).
+func _pu_throw(aim: Vector2) -> void:
+	var tgt := Vector2(
+		clampf(aim.x, FIELD.position.x + 10.0, FIELD.end.x - 10.0),
+		clampf(aim.y, FIELD.position.y + 10.0, FIELD.end.y - 10.0))
+	var from := _pu_aim_from
+	_pu_aim_end()
+	ThrowFX.throw(self, "bomba", from, tgt, away, ball,
+		func(v: float): _shake = maxf(_shake, v))
+
+## Botão direito: devolve o item pro gramado (não gasta).
+func _pu_aim_cancel() -> void:
+	var from := _pu_aim_from
+	_pu_aim_end()
+	var pu := PowerUpFX.new()
+	pu.kind = "bomba"
+	pu.position = from
+	add_child(pu)
+	_powerup = pu
+
+func _pu_aim_end() -> void:
+	_pu_aim_kind = ""
+	Engine.time_scale = _pu_prev_ts
+	if _pu_cross != null: _pu_cross.queue_free(); _pu_cross = null
+	if _pu_hint != null: _pu_hint.queue_free(); _pu_hint = null
+	var held := get_node_or_null("pu_held")
+	if held != null: held.queue_free()
+
+## Retícula segue o mouse todo frame renderizado (fluida mesmo na câmera lenta,
+## já que _process não é afetado pela contagem de passos de física).
+func _process(_delta: float) -> void:
+	if _pu_cross != null:
+		_pu_cross.position = get_global_mouse_position() + Vector2(-16.0, -18.0)
+
 ## Aviso flutuante no ponto da coleta (sobe e some).
 func _announce_power(kind: String, team: String, pos: Vector2) -> void:
 	var names := {"bomba": "💣 KABUM!", "raio": "⚡ VELOCIDADE!",
@@ -650,7 +738,7 @@ func _make_vignette() -> Control:
 ## Pode chutar agora? (jogador com a bola, modo Pro, sem estar mirando/em voo)
 func _can_shoot() -> bool:
 	return pro_mode and not _aiming and not _in_flight and not over \
-		and carrier != null and carrier.team == "home"
+		and _pu_aim_kind == "" and carrier != null and carrier.team == "home"
 
 ## Pode passar? (mesmo do chute — você precisa estar com a bola)
 func _can_pass() -> bool:
@@ -682,6 +770,23 @@ func _toggle_auto() -> void:
 			_on_pass_cancelled()
 
 func _unhandled_input(e: InputEvent) -> void:
+	# POWER-UP com o mouse — vale em Auto E Pro (antes dos guards de modo):
+	# com a mira da 💣 ativa, clique arremessa / botão direito devolve o item;
+	# sem mira, clique EM CIMA do item pega ele pro time da casa.
+	if e is InputEventMouseButton and e.pressed and not over:
+		if _pu_aim_kind != "":
+			if e.button_index == MOUSE_BUTTON_LEFT:
+				_pu_throw(get_global_mouse_position())
+			elif e.button_index == MOUSE_BUTTON_RIGHT:
+				_pu_aim_cancel()
+			get_viewport().set_input_as_handled()
+			return
+		if e.button_index == MOUSE_BUTTON_LEFT and _powerup != null \
+				and is_instance_valid(_powerup) \
+				and get_global_mouse_position().distance_to(_powerup.position) < 42.0:
+			_grab_powerup_mouse()
+			get_viewport().set_input_as_handled()
+			return
 	if _aiming or not pro_mode: return
 	if e is InputEventKey and e.pressed and not e.echo:
 		match e.keycode:
@@ -1280,6 +1385,7 @@ func _spawn_trail(spd: float) -> void:
 func _finish_by_target(won: bool) -> void:
 	if over: return
 	over = true
+	if _pu_aim_kind != "": _pu_aim_cancel()   # fim de jogo no meio da mira: devolve e destrava
 	var pts: int = _score.total if _score else 0
 	_goal_lbl.text = ("ALVO BATIDO!  %d / %d" % [pts, _target]) if won else ("FALHOU  %d / %d" % [pts, _target])
 	_goal_lbl.modulate = Color(1, 1, 1, 1)
@@ -1519,7 +1625,10 @@ func _score_plate() -> Control:
 ## Velocidade do jogo. time_scale só muda QUANTOS passos de física rodam por segundo
 ## (o passo segue 1/60 fixo) → 2x não tunela pela parede/gol. Reseta no _exit_tree.
 func _set_speed(scale: float, active: Button) -> void:
-	Engine.time_scale = scale
+	if _pu_aim_kind != "":
+		_pu_prev_ts = scale        # na câmera lenta da 💣: só agenda pro fim da mira
+	else:
+		Engine.time_scale = scale
 	for b in _speed_btns:
 		b.modulate = Color(1, 1, 1, 1.0) if b == active else Color(1, 1, 1, 0.45)
 
@@ -1670,7 +1779,7 @@ func _card_btn(id: String, idx: int) -> Button:
 
 ## Clicar numa carta → PAUSA o jogo; se precisa de alvo, escolhe o jogador.
 func _use_card(idx: int) -> void:
-	if over or idx >= _hand.size() or _targeting != "" or _aiming: return
+	if over or idx >= _hand.size() or _targeting != "" or _aiming or _pu_aim_kind != "": return
 	var id: String = _hand[idx]
 	var card: Dictionary = MatchCardsLib.POOL[id]
 	get_tree().paused = true

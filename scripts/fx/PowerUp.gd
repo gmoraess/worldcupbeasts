@@ -18,6 +18,8 @@ var kind := "bomba"
 var _t := 0.0
 var _label: Label
 
+var _hint: Label
+
 func _ready() -> void:
 	z_index = 4
 	_label = Label.new()
@@ -25,6 +27,15 @@ func _ready() -> void:
 	_label.add_theme_font_size_override("font_size", 22)
 	_label.position = Vector2(-14, -16)
 	add_child(_label)
+	# convite: dá pra PEGAR COM O MOUSE (o Match trata o clique)
+	_hint = Label.new()
+	_hint.text = "clique!"
+	_hint.add_theme_font_size_override("font_size", 10)
+	_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.9))
+	_hint.add_theme_color_override("font_outline_color", Color.BLACK)
+	_hint.add_theme_constant_override("outline_size", 4)
+	_hint.position = Vector2(-17, 16)
+	add_child(_hint)
 
 func _process(delta: float) -> void:
 	_t += delta
@@ -33,6 +44,7 @@ func _process(delta: float) -> void:
 		return
 	# flutua + pisca quando está pra sumir
 	_label.position.y = -16.0 + sin(_t * 3.4) * 3.0
+	_hint.modulate.a = 0.45 + 0.55 * (0.5 + 0.5 * sin(_t * 4.6))
 	if _t > LIFE - 2.5:
 		visible = fmod(_t, 0.24) < 0.15
 	queue_redraw()
